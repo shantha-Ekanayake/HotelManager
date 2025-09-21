@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import DashboardHeader from "@/components/DashboardHeader";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import Dashboard from "@/pages/Dashboard";
+import FrontDesk from "@/pages/FrontDesk";
 import Reservations from "@/pages/Reservations";
 import Rooms from "@/pages/Rooms";
 import NotFound from "@/pages/NotFound";
@@ -16,6 +17,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/front-desk" component={FrontDesk} />
       <Route path="/reservations" component={Reservations} />
       <Route path="/rooms" component={Rooms} />
       <Route path="/guests" component={() => <div className="p-6"><h1 className="text-2xl font-bold">Guests - Coming Soon</h1></div>} />

@@ -30,6 +30,11 @@ const menuItems = [
     icon: Home,
   },
   {
+    title: "Front Desk",
+    url: "/front-desk",
+    icon: Users,
+  },
+  {
     title: "Reservations",
     url: "/reservations",
     icon: Calendar,
