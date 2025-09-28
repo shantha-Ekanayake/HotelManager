@@ -2005,10 +2005,16 @@ export function registerReportingRoutes(app: Express) {
 export function registerFinancialReportingRoutes(app: Express) {
   // Folio Summary Report
   app.get("/api/financial-reports/folio-summary",
-    async (req: Request, res: Response) => {
+    authenticate,
+    authorize("reports.view.financial"),
+    async (req: AuthRequest, res: Response) => {
       try {
-        // Demo property ID for development
-        const propertyId = 'demo-property-1';
+        // Get property ID from authenticated user to ensure proper scoping
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
         
         // Validate date range parameters
         const dateValidation = DateRangeSchema.safeParse(req.query);
@@ -2035,10 +2041,16 @@ export function registerFinancialReportingRoutes(app: Express) {
 
   // Charges Analysis Report
   app.get("/api/financial-reports/charges-analysis",
-    async (req: Request, res: Response) => {
+    authenticate,
+    authorize("reports.view.financial"),
+    async (req: AuthRequest, res: Response) => {
       try {
-        // Demo property ID for development
-        const propertyId = 'demo-property-1';
+        // Get property ID from authenticated user to ensure proper scoping
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
         
         // Validate date range parameters
         const dateValidation = DateRangeSchema.safeParse(req.query);
@@ -2065,10 +2077,16 @@ export function registerFinancialReportingRoutes(app: Express) {
 
   // Payment Analysis Report
   app.get("/api/financial-reports/payment-analysis",
-    async (req: Request, res: Response) => {
+    authenticate,
+    authorize("reports.view.financial"),
+    async (req: AuthRequest, res: Response) => {
       try {
-        // Demo property ID for development
-        const propertyId = 'demo-property-1';
+        // Get property ID from authenticated user to ensure proper scoping
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
         
         // Validate date range parameters
         const dateValidation = DateRangeSchema.safeParse(req.query);
@@ -2095,10 +2113,16 @@ export function registerFinancialReportingRoutes(app: Express) {
 
   // Accounting Export Data
   app.get("/api/financial-reports/accounting-export",
-    async (req: Request, res: Response) => {
+    authenticate,
+    authorize("reports.view.financial"),
+    async (req: AuthRequest, res: Response) => {
       try {
-        // Demo property ID for development
-        const propertyId = 'demo-property-1';
+        // Get property ID from authenticated user to ensure proper scoping
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
         
         // Validate date range parameters
         const dateValidation = DateRangeSchema.safeParse(req.query);
@@ -2125,10 +2149,16 @@ export function registerFinancialReportingRoutes(app: Express) {
 
   // Financial Summary Dashboard
   app.get("/api/financial-reports/financial-dashboard",
-    async (req: Request, res: Response) => {
+    authenticate,
+    authorize("reports.view.financial"),
+    async (req: AuthRequest, res: Response) => {
       try {
-        // Demo property ID for development
-        const propertyId = 'demo-property-1';
+        // Get property ID from authenticated user to ensure proper scoping
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
         
         // Validate date range parameters
         const dateValidation = DateRangeSchema.safeParse(req.query);
