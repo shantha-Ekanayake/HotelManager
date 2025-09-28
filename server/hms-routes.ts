@@ -481,7 +481,101 @@ export function registerReservationRoutes(app: Express) {
     }
   );
 
-  // Create reservation
+  // Check availability
+  app.post("/api/properties/:propertyId/availability/check", 
+    authenticate, 
+    authorize("reservations.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { propertyId } = req.params;
+        const { roomTypeId, arrivalDate, departureDate } = req.body;
+        
+        if (!roomTypeId || !arrivalDate || !departureDate) {
+          return res.status(400).json({ error: "roomTypeId, arrivalDate, and departureDate are required" });
+        }
+        
+        const arrival = new Date(arrivalDate);
+        const departure = new Date(departureDate);
+        
+        if (arrival >= departure) {
+          return res.status(400).json({ error: "Departure date must be after arrival date" });
+        }
+        
+        const availability = await storage.checkAvailability(propertyId, roomTypeId, arrival, departure);
+        
+        res.json({ availability });
+      } catch (error) {
+        console.error("Check availability error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get room type availability calendar
+  app.get("/api/properties/:propertyId/room-types/:roomTypeId/availability", 
+    authenticate, 
+    authorize("reservations.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { propertyId, roomTypeId } = req.params;
+        const { fromDate, toDate } = req.query;
+        
+        if (!fromDate || !toDate) {
+          return res.status(400).json({ error: "fromDate and toDate query parameters are required" });
+        }
+        
+        const from = new Date(fromDate as string);
+        const to = new Date(toDate as string);
+        
+        const availability = await storage.getRoomTypeAvailability(propertyId, roomTypeId, from, to);
+        
+        res.json({ availability });
+      } catch (error) {
+        console.error("Get availability calendar error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Calculate best available rate
+  app.post("/api/properties/:propertyId/rates/calculate", 
+    authenticate, 
+    authorize("reservations.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { propertyId } = req.params;
+        const { roomTypeId, arrivalDate, departureDate } = req.body;
+        
+        if (!roomTypeId || !arrivalDate || !departureDate) {
+          return res.status(400).json({ error: "roomTypeId, arrivalDate, and departureDate are required" });
+        }
+        
+        const arrival = new Date(arrivalDate);
+        const departure = new Date(departureDate);
+        const lengthOfStay = Math.ceil((departure.getTime() - arrival.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (lengthOfStay <= 0) {
+          return res.status(400).json({ error: "Invalid date range" });
+        }
+        
+        const bestRate = await storage.calculateBestRate(propertyId, roomTypeId, arrival, departure, lengthOfStay);
+        
+        if (!bestRate) {
+          return res.status(404).json({ error: "No available rates found for the specified criteria" });
+        }
+        
+        res.json({ rate: bestRate });
+      } catch (error) {
+        console.error("Calculate best rate error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Enhanced reservation creation with availability validation
   app.post("/api/reservations", 
     authenticate, 
     authorize("reservations.manage"),
@@ -494,13 +588,68 @@ export function registerReservationRoutes(app: Express) {
         const departureDate = new Date(reservationData.departureDate);
         const nights = Math.ceil((departureDate.getTime() - arrivalDate.getTime()) / (1000 * 60 * 60 * 24));
         
-        const reservation = await storage.createReservation({
+        if (nights <= 0) {
+          return res.status(400).json({ error: "Invalid date range" });
+        }
+        
+        // Calculate best rate if not provided
+        let totalAmount = reservationData.totalAmount;
+        if (!totalAmount) {
+          const bestRate = await storage.calculateBestRate(
+            reservationData.propertyId,
+            reservationData.roomTypeId,
+            arrivalDate,
+            departureDate,
+            nights
+          );
+          
+          if (!bestRate) {
+            return res.status(404).json({ error: "No available rates found" });
+          }
+          
+          totalAmount = bestRate.totalAmount;
+        }
+        
+        // Validate rate plan length-of-stay restrictions
+        const ratePlan = await storage.getRatePlan(reservationData.ratePlanId);
+        if (ratePlan) {
+          if (ratePlan.minLengthOfStay && nights < ratePlan.minLengthOfStay) {
+            return res.status(400).json({ 
+              error: `Minimum length of stay is ${ratePlan.minLengthOfStay} nights` 
+            });
+          }
+          if (ratePlan.maxLengthOfStay && nights > ratePlan.maxLengthOfStay) {
+            return res.status(400).json({ 
+              error: `Maximum length of stay is ${ratePlan.maxLengthOfStay} nights` 
+            });
+          }
+        }
+        
+        // Use transactional reservation creation to prevent race conditions
+        const result = await storage.createReservationWithValidation({
           ...reservationData,
           nights,
+          totalAmount,
           createdBy: req.user?.id
-        });
+        }, true);
         
-        res.status(201).json({ reservation });
+        if (!result.success) {
+          if (result.error?.includes("No rooms available")) {
+            return res.status(409).json({ 
+              error: result.error,
+              availability: result.availability
+            });
+          }
+          if (result.error?.includes("booking restrictions")) {
+            return res.status(409).json({ 
+              error: result.error,
+              restrictions: result.availability?.restrictions
+            });
+          }
+          return res.status(500).json({ error: result.error || "Reservation creation failed" });
+        }
+        
+        res.status(201).json({ reservation: result.reservation });
       } catch (error) {
         if (error instanceof z.ZodError) {
           return res.status(400).json({ error: "Validation error", details: error.errors });

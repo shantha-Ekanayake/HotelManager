@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, lt, or, sql, isNull, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   type User,
@@ -87,6 +87,40 @@ export interface IHMSStorage {
   getDailyRates(propertyId: string, fromDate: Date, toDate: Date): Promise<DailyRate[]>;
   createDailyRate(dailyRate: InsertDailyRate): Promise<DailyRate>;
   updateDailyRate(id: string, dailyRate: Partial<InsertDailyRate>): Promise<DailyRate>;
+  
+  // Availability Management
+  checkAvailability(propertyId: string, roomTypeId: string, arrivalDate: Date, departureDate: Date): Promise<{
+    available: boolean;
+    totalRooms: number;
+    occupiedRooms: number;
+    availableRooms: number;
+    restrictions: any[];
+  }>;
+  getRoomTypeAvailability(propertyId: string, roomTypeId: string, fromDate: Date, toDate: Date): Promise<{
+    date: Date;
+    totalRooms: number;
+    occupiedRooms: number;
+    availableRooms: number;
+    closeToArrival: boolean;
+    closeToDeparture: boolean;
+    stopSell: boolean;
+  }[]>;
+  
+  // Rate Calculation
+  calculateBestRate(propertyId: string, roomTypeId: string, arrivalDate: Date, departureDate: Date, lengthOfStay: number): Promise<{
+    ratePlan: RatePlan;
+    dailyRates: DailyRate[];
+    totalAmount: number;
+    averageNightlyRate: number;
+  } | null>;
+  
+  // Transactional Reservation Creation
+  createReservationWithValidation(reservation: InsertReservation, validateAvailability: boolean): Promise<{
+    success: boolean;
+    reservation?: Reservation;
+    error?: string;
+    availability?: any;
+  }>;
   
   // Reservation Management
   getReservation(id: string): Promise<Reservation | undefined>;
@@ -565,6 +599,404 @@ export class DatabaseStorage implements IHMSStorage {
       updatedAt: new Date()
     }).where(eq(housekeepingTasks.id, id)).returning();
     return result[0];
+  }
+
+  // Availability Management Implementation
+  async checkAvailability(propertyId: string, roomTypeId: string, arrivalDate: Date, departureDate: Date): Promise<{
+    available: boolean;
+    totalRooms: number;
+    occupiedRooms: number;
+    availableRooms: number;
+    restrictions: any[];
+  }> {
+    try {
+      // Get total rooms for this room type
+      const totalRoomsResult = await db.select({ count: sql<number>`count(*)` })
+        .from(rooms)
+        .where(and(
+          eq(rooms.propertyId, propertyId),
+          eq(rooms.roomTypeId, roomTypeId),
+          eq(rooms.isActive, true)
+        ));
+      
+      const totalRooms = totalRoomsResult[0]?.count || 0;
+
+      // Check per-night availability (minimum availability across all nights)
+      let minAvailableRooms = totalRooms;
+      const currentDate = new Date(arrivalDate);
+      
+      while (currentDate < departureDate) {
+        const nextDate = new Date(currentDate);
+        nextDate.setDate(nextDate.getDate() + 1);
+        
+        // Count reservations that occupy this specific night
+        const occupiedOnNightResult = await db.select({ count: sql<number>`count(*)` })
+          .from(reservations)
+          .where(and(
+            eq(reservations.propertyId, propertyId),
+            eq(reservations.roomTypeId, roomTypeId),
+            // Reservation occupies this night if: arrival <= currentDate AND departure > currentDate
+            sql`${reservations.arrivalDate} <= ${currentDate}`,
+            sql`${reservations.departureDate} > ${currentDate}`,
+            sql`${reservations.status} IN ('confirmed', 'checked_in')`
+          ));
+
+        const occupiedOnNight = occupiedOnNightResult[0]?.count || 0;
+        const availableOnNight = totalRooms - occupiedOnNight;
+        minAvailableRooms = Math.min(minAvailableRooms, availableOnNight);
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      const availableRooms = minAvailableRooms;
+
+      // Check for daily rate restrictions
+      const restrictions: any[] = [];
+      
+      // Normalize dates to midnight for proper comparison
+      const normalizedArrival = new Date(arrivalDate.getFullYear(), arrivalDate.getMonth(), arrivalDate.getDate());
+      const normalizedDeparture = new Date(departureDate.getFullYear(), departureDate.getMonth(), departureDate.getDate());
+      
+      // Check restrictions for stayed nights [arrival, departure) and departure date
+      const stayedNightsRates = await db.select()
+        .from(dailyRates)
+        .where(and(
+          eq(dailyRates.propertyId, propertyId),
+          eq(dailyRates.roomTypeId, roomTypeId),
+          gte(dailyRates.date, normalizedArrival),
+          lt(dailyRates.date, normalizedDeparture) // Stayed nights: [arrival, departure)
+        ));
+
+      // Check close-to-arrival on arrival date
+      const arrivalDateRate = await db.select()
+        .from(dailyRates)
+        .where(and(
+          eq(dailyRates.propertyId, propertyId),
+          eq(dailyRates.roomTypeId, roomTypeId),
+          eq(dailyRates.date, normalizedArrival)
+        ))
+        .limit(1);
+
+      // Check close-to-departure on departure date
+      const departureDateRate = await db.select()
+        .from(dailyRates)
+        .where(and(
+          eq(dailyRates.propertyId, propertyId),
+          eq(dailyRates.roomTypeId, roomTypeId),
+          eq(dailyRates.date, normalizedDeparture)
+        ))
+        .limit(1);
+
+      // Process restrictions for stayed nights (stop-sell only)
+      for (const rate of stayedNightsRates) {
+        if (rate.stopSell) {
+          restrictions.push({ type: 'stop_sell', date: rate.date });
+        }
+      }
+
+      // Check close-to-arrival on arrival date
+      if (arrivalDateRate[0]?.closeToArrival) {
+        restrictions.push({ type: 'close_to_arrival', date: arrivalDateRate[0].date });
+      }
+
+      // Check close-to-departure on departure date
+      if (departureDateRate[0]?.closeToDeparture) {
+        restrictions.push({ type: 'close_to_departure', date: departureDateRate[0].date });
+      }
+
+      const hasBlockingRestrictions = restrictions.some(r => 
+        r.type === 'stop_sell' || 
+        r.type === 'close_to_arrival' || 
+        r.type === 'close_to_departure'
+      );
+      
+      const available = availableRooms > 0 && !hasBlockingRestrictions;
+
+      return {
+        available,
+        totalRooms,
+        occupiedRooms,
+        availableRooms,
+        restrictions
+      };
+    } catch (error) {
+      console.error("Check availability error:", error);
+      throw error;
+    }
+  }
+
+  async getRoomTypeAvailability(propertyId: string, roomTypeId: string, fromDate: Date, toDate: Date): Promise<{
+    date: Date;
+    totalRooms: number;
+    occupiedRooms: number;
+    availableRooms: number;
+    closeToArrival: boolean;
+    closeToDeparture: boolean;
+    stopSell: boolean;
+  }[]> {
+    try {
+      // Get total rooms for this room type
+      const totalRoomsResult = await db.select({ count: sql<number>`count(*)` })
+        .from(rooms)
+        .where(and(
+          eq(rooms.propertyId, propertyId),
+          eq(rooms.roomTypeId, roomTypeId),
+          eq(rooms.isActive, true)
+        ));
+      
+      const totalRooms = totalRoomsResult[0]?.count || 0;
+      const results: any[] = [];
+
+      // Iterate through each date
+      const currentDate = new Date(fromDate);
+      while (currentDate <= toDate) {
+        const nextDate = new Date(currentDate);
+        nextDate.setDate(nextDate.getDate() + 1);
+
+        // Get occupied rooms for this specific date
+        const occupiedRoomsResult = await db.select({ count: sql<number>`count(*)` })
+          .from(reservations)
+          .where(and(
+            eq(reservations.propertyId, propertyId),
+            eq(reservations.roomTypeId, roomTypeId),
+            sql`${reservations.arrivalDate} <= ${currentDate}`,
+            sql`${reservations.departureDate} > ${currentDate}`,
+            sql`${reservations.status} IN ('confirmed', 'checked_in')`
+          ));
+
+        const occupiedRooms = occupiedRoomsResult[0]?.count || 0;
+
+        // Get daily rate restrictions
+        const dailyRate = await db.select()
+          .from(dailyRates)
+          .where(and(
+            eq(dailyRates.propertyId, propertyId),
+            eq(dailyRates.roomTypeId, roomTypeId),
+            eq(dailyRates.date, currentDate)
+          ))
+          .limit(1);
+
+        const rate = dailyRate[0];
+
+        results.push({
+          date: new Date(currentDate),
+          totalRooms,
+          occupiedRooms,
+          availableRooms: totalRooms - occupiedRooms,
+          closeToArrival: rate?.closeToArrival || false,
+          closeToDeparture: rate?.closeToDeparture || false,
+          stopSell: rate?.stopSell || false
+        });
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      return results;
+    } catch (error) {
+      console.error("Get room type availability error:", error);
+      throw error;
+    }
+  }
+
+  async calculateBestRate(propertyId: string, roomTypeId: string, arrivalDate: Date, departureDate: Date, lengthOfStay: number): Promise<{
+    ratePlan: RatePlan;
+    dailyRates: DailyRate[];
+    totalAmount: number;
+    averageNightlyRate: number;
+  } | null> {
+    try {
+      // Get active rate plans for this property that satisfy length of stay restrictions
+      const ratePlans = await db.select()
+        .from(ratePlans)
+        .where(and(
+          eq(ratePlans.propertyId, propertyId),
+          eq(ratePlans.isActive, true),
+          or(
+            sql`${ratePlans.minLengthOfStay} IS NULL`,
+            lte(ratePlans.minLengthOfStay, lengthOfStay)
+          ),
+          or(
+            sql`${ratePlans.maxLengthOfStay} IS NULL`,
+            gte(ratePlans.maxLengthOfStay, lengthOfStay)
+          )
+        ));
+
+      let bestOffer: any = null;
+      let lowestTotal = Infinity;
+
+      for (const ratePlan of ratePlans) {
+        // Get daily rates for this rate plan and date range
+        const dailyRatesForPlan = await db.select()
+          .from(dailyRates)
+          .where(and(
+            eq(dailyRates.propertyId, propertyId),
+            eq(dailyRates.roomTypeId, roomTypeId),
+            eq(dailyRates.ratePlanId, ratePlan.id),
+            gte(dailyRates.date, arrivalDate),
+            lt(dailyRates.date, departureDate)
+          ))
+          .orderBy(asc(dailyRates.date));
+
+        // Check if we have rates for all dates
+        if (dailyRatesForPlan.length !== lengthOfStay) {
+          continue; // Skip this rate plan if not all dates have rates
+        }
+
+        // Check for stop-sell restrictions
+        const hasStopSell = dailyRatesForPlan.some(rate => rate.stopSell);
+        if (hasStopSell) {
+          continue; // Skip this rate plan if any date has stop-sell
+        }
+
+        // Calculate total amount
+        const totalAmount = dailyRatesForPlan.reduce((sum, rate) => {
+          return sum + parseFloat(rate.rate);
+        }, 0);
+
+        if (totalAmount < lowestTotal) {
+          lowestTotal = totalAmount;
+          bestOffer = {
+            ratePlan,
+            dailyRates: dailyRatesForPlan,
+            totalAmount,
+            averageNightlyRate: totalAmount / lengthOfStay
+          };
+        }
+      }
+
+      return bestOffer;
+    } catch (error) {
+      console.error("Calculate best rate error:", error);
+      throw error;
+    }
+  }
+
+  // Transactional reservation creation with availability validation
+  async createReservationWithValidation(reservation: InsertReservation, validateAvailability: boolean = true): Promise<{
+    success: boolean;
+    reservation?: Reservation;
+    error?: string;
+    availability?: any;
+  }> {
+    try {
+      return await db.transaction(async (tx) => {
+        if (validateAvailability) {
+          // Check availability within the transaction
+          const arrivalDate = new Date(reservation.arrivalDate);
+          const departureDate = new Date(reservation.departureDate);
+          
+          // Get total rooms for this room type (with transaction context)
+          const totalRoomsResult = await tx.select({ count: sql<number>`count(*)` })
+            .from(rooms)
+            .where(and(
+              eq(rooms.propertyId, reservation.propertyId),
+              eq(rooms.roomTypeId, reservation.roomTypeId),
+              eq(rooms.isActive, true)
+            ));
+          
+          const totalRooms = totalRoomsResult[0]?.count || 0;
+
+          // Check per-night availability (minimum availability across all nights)
+          let minAvailableRooms = totalRooms;
+          const currentDate = new Date(arrivalDate);
+          
+          while (currentDate < departureDate) {
+            // Count reservations that occupy this specific night (with transaction context)
+            const occupiedOnNightResult = await tx.select({ count: sql<number>`count(*)` })
+              .from(reservations)
+              .where(and(
+                eq(reservations.propertyId, reservation.propertyId),
+                eq(reservations.roomTypeId, reservation.roomTypeId),
+                // Reservation occupies this night if: arrival <= currentDate AND departure > currentDate
+                sql`${reservations.arrivalDate} <= ${currentDate}`,
+                sql`${reservations.departureDate} > ${currentDate}`,
+                sql`${reservations.status} IN ('confirmed', 'checked_in')`
+              ));
+
+            const occupiedOnNight = occupiedOnNightResult[0]?.count || 0;
+            const availableOnNight = totalRooms - occupiedOnNight;
+            minAvailableRooms = Math.min(minAvailableRooms, availableOnNight);
+            
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+          
+          const availableRooms = minAvailableRooms;
+
+          if (availableRooms <= 0) {
+            return {
+              success: false,
+              error: "No rooms available for the selected dates",
+              availability: { available: false, totalRooms, availableRooms }
+            };
+          }
+
+          // Check for rate restrictions within transaction
+          const normalizedArrival = new Date(arrivalDate.getFullYear(), arrivalDate.getMonth(), arrivalDate.getDate());
+          const normalizedDeparture = new Date(departureDate.getFullYear(), departureDate.getMonth(), departureDate.getDate());
+          
+          // Check restrictions with proper boundary logic
+          const stayedNightsRates = await tx.select()
+            .from(dailyRates)
+            .where(and(
+              eq(dailyRates.propertyId, reservation.propertyId),
+              eq(dailyRates.roomTypeId, reservation.roomTypeId),
+              gte(dailyRates.date, normalizedArrival),
+              lt(dailyRates.date, normalizedDeparture) // Stayed nights: [arrival, departure)
+            ));
+
+          // Check close-to-arrival on arrival date
+          const arrivalDateRate = await tx.select()
+            .from(dailyRates)
+            .where(and(
+              eq(dailyRates.propertyId, reservation.propertyId),
+              eq(dailyRates.roomTypeId, reservation.roomTypeId),
+              eq(dailyRates.date, normalizedArrival)
+            ))
+            .limit(1);
+
+          // Check close-to-departure on departure date
+          const departureDateRate = await tx.select()
+            .from(dailyRates)
+            .where(and(
+              eq(dailyRates.propertyId, reservation.propertyId),
+              eq(dailyRates.roomTypeId, reservation.roomTypeId),
+              eq(dailyRates.date, normalizedDeparture)
+            ))
+            .limit(1);
+
+          const hasBlockingRestrictions = 
+            stayedNightsRates.some(rate => rate.stopSell) ||
+            arrivalDateRate[0]?.closeToArrival ||
+            departureDateRate[0]?.closeToDeparture;
+
+          if (hasBlockingRestrictions) {
+            return {
+              success: false,
+              error: "Selected dates have booking restrictions",
+              availability: { available: false, restrictions: restrictiveRates }
+            };
+          }
+        }
+
+        // Create the reservation within the same transaction
+        const confirmationNumber = `RES-${Date.now()}`;
+        const result = await tx.insert(reservations).values({
+          ...reservation,
+          confirmationNumber
+        }).returning();
+
+        return {
+          success: true,
+          reservation: result[0]
+        };
+      });
+    } catch (error) {
+      console.error("Transactional reservation creation error:", error);
+      return {
+        success: false,
+        error: "Database transaction failed"
+      };
+    }
   }
 }
 
