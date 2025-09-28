@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, lt, gt, or, sql, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, lt, gt, or, sql, isNull, isNotNull, inArray } from "drizzle-orm";
 import { db } from "./db";
 import {
   type User,
@@ -1862,8 +1862,25 @@ export class DatabaseStorage implements IHMSStorage {
     foliosByStatus: Record<string, number>;
     paymentMethodBreakdown: Record<string, number>;
   }> {
-    // Get folio statistics
-    const folioStats = await db.select({
+    // Get folios that have charges or payments within the date range for consistency with detailed reports
+    const foliosWithActivity = await db.selectDistinct({
+      folioId: folios.id
+    })
+    .from(folios)
+    .leftJoin(charges, eq(charges.folioId, folios.id))
+    .leftJoin(payments, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      or(
+        and(gte(charges.postingDate, fromDate), lte(charges.postingDate, toDate)),
+        and(gte(payments.createdAt, fromDate), lte(payments.createdAt, toDate))
+      )
+    ));
+
+    const activeFolioIds = foliosWithActivity.map(f => f.folioId);
+    
+    // Get folio statistics for folios with activity in date range
+    const folioStats = activeFolioIds.length > 0 ? await db.select({
       totalFolios: sql<number>`COUNT(*)`,
       openFolios: sql<number>`SUM(CASE WHEN ${folios.status} = 'open' THEN 1 ELSE 0 END)`,
       closedFolios: sql<number>`SUM(CASE WHEN ${folios.status} = 'closed' THEN 1 ELSE 0 END)`,
@@ -1875,22 +1892,20 @@ export class DatabaseStorage implements IHMSStorage {
     .from(folios)
     .where(and(
       eq(folios.propertyId, propertyId),
-      gte(folios.createdAt, fromDate),
-      lte(folios.createdAt, toDate)
-    ));
+      inArray(folios.id, activeFolioIds)
+    )) : [];
 
-    // Get folios by status
-    const statusBreakdown = await db.select({
+    // Get folios by status for folios with activity in date range
+    const statusBreakdown = activeFolioIds.length > 0 ? await db.select({
       status: folios.status,
       count: sql<number>`COUNT(*)`
     })
     .from(folios)
     .where(and(
       eq(folios.propertyId, propertyId),
-      gte(folios.createdAt, fromDate),
-      lte(folios.createdAt, toDate)
+      inArray(folios.id, activeFolioIds)
     ))
-    .groupBy(folios.status);
+    .groupBy(folios.status) : [];
 
     // Get payment method breakdown
     const paymentBreakdown = await db.select({
