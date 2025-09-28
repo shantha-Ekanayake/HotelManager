@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, lt, or, sql, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, lt, gt, or, sql, isNull, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   type User,
@@ -27,6 +27,14 @@ import {
   type InsertRatePlan,
   type DailyRate,
   type InsertDailyRate,
+  type DailyMetric,
+  type InsertDailyMetric,
+  type GuestSatisfaction,
+  type InsertGuestSatisfaction,
+  type ReportDefinition,
+  type InsertReportDefinition,
+  type AnalyticsEvent,
+  type InsertAnalyticsEvent,
   users,
   properties,
   rooms,
@@ -39,7 +47,11 @@ import {
   serviceRequests,
   housekeepingTasks,
   ratePlans,
-  dailyRates
+  dailyRates,
+  dailyMetrics,
+  guestSatisfaction,
+  reportDefinitions,
+  analyticsEvents
 } from "@shared/schema";
 
 export interface IHMSStorage {
@@ -178,6 +190,88 @@ export interface IHMSStorage {
   getHousekeepingTasksByAssignee(assignedTo: string): Promise<HousekeepingTask[]>;
   createHousekeepingTask(task: InsertHousekeepingTask): Promise<HousekeepingTask>;
   updateHousekeepingTask(id: string, task: Partial<InsertHousekeepingTask>): Promise<HousekeepingTask>;
+  
+  // Daily Metrics & Analytics
+  getDailyMetric(propertyId: string, date: Date): Promise<DailyMetric | undefined>;
+  getDailyMetrics(propertyId: string, fromDate: Date, toDate: Date): Promise<DailyMetric[]>;
+  createOrUpdateDailyMetric(metric: InsertDailyMetric): Promise<DailyMetric>;
+  calculateDailyMetrics(propertyId: string, date: Date): Promise<DailyMetric>;
+  
+  // Guest Satisfaction
+  getGuestSatisfaction(id: string, propertyId?: string): Promise<GuestSatisfaction | undefined>;
+  getGuestSatisfactionByProperty(propertyId: string, fromDate?: Date, toDate?: Date): Promise<GuestSatisfaction[]>;
+  getGuestSatisfactionByReservation(reservationId: string): Promise<GuestSatisfaction | undefined>;
+  createGuestSatisfaction(satisfaction: InsertGuestSatisfaction): Promise<GuestSatisfaction>;
+  getAverageRatings(propertyId: string, fromDate?: Date, toDate?: Date): Promise<{
+    overallRating: number;
+    roomRating: number;
+    serviceRating: number;
+    cleanlinessRating: number;
+    valueRating: number;
+    locationRating: number;
+    recommendationRate: number;
+    totalResponses: number;
+  }>;
+  
+  // Report Management
+  getReportDefinition(id: string, propertyId?: string): Promise<ReportDefinition | undefined>;
+  getReportDefinitions(propertyId: string, type?: string): Promise<ReportDefinition[]>;
+  createReportDefinition(report: InsertReportDefinition): Promise<ReportDefinition>;
+  updateReportDefinition(id: string, report: Partial<InsertReportDefinition>, propertyId?: string): Promise<ReportDefinition>;
+  deleteReportDefinition(id: string, propertyId?: string): Promise<boolean>;
+  
+  // Analytics Events
+  createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent>;
+  getAnalyticsEvents(propertyId: string, fromDate?: Date, toDate?: Date, eventCategory?: string): Promise<AnalyticsEvent[]>;
+  
+  // Comprehensive Reporting Methods
+  getOccupancyReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    date: Date;
+    occupancyRate: number;
+    totalRooms: number;
+    occupiedRooms: number;
+    adr: number;
+    revpar: number;
+    totalRevenue: number;
+  }[]>;
+  
+  getRevenueReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalRevenue: number;
+    roomRevenue: number;
+    otherRevenue: number;
+    avgDailyRate: number;
+    revpar: number;
+    totalNights: number;
+    totalGuests: number;
+  }>;
+  
+  getHousekeepingReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalTasks: number;
+    completedTasks: number;
+    avgCompletionTime: number;
+    tasksByStatus: Record<string, number>;
+    tasksByType: Record<string, number>;
+    staffPerformance: {
+      staffId: string;
+      staffName: string;
+      tasksCompleted: number;
+      avgCompletionTime: number;
+    }[];
+  }>;
+  
+  getGuestAnalytics(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalGuests: number;
+    newGuests: number;
+    returningGuests: number;
+    vipGuests: number;
+    avgLengthOfStay: number;
+    topSourceMarkets: { source: string; count: number }[];
+    guestSatisfactionSummary: {
+      avgOverallRating: number;
+      totalSurveys: number;
+      recommendationRate: number;
+    };
+  }>;
 }
 
 export class DatabaseStorage implements IHMSStorage {
@@ -730,6 +824,627 @@ export class DatabaseStorage implements IHMSStorage {
       updatedAt: new Date()
     }).where(eq(housekeepingTasks.id, id)).returning();
     return result[0];
+  }
+
+  // Daily Metrics & Analytics Implementation
+  async getDailyMetric(propertyId: string, date: Date): Promise<DailyMetric | undefined> {
+    const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const result = await db.select().from(dailyMetrics)
+      .where(and(
+        eq(dailyMetrics.propertyId, propertyId),
+        eq(dailyMetrics.metricDate, normalizedDate)
+      )).limit(1);
+    return result[0];
+  }
+
+  async getDailyMetrics(propertyId: string, fromDate: Date, toDate: Date): Promise<DailyMetric[]> {
+    return await db.select().from(dailyMetrics)
+      .where(and(
+        eq(dailyMetrics.propertyId, propertyId),
+        gte(dailyMetrics.metricDate, fromDate),
+        lte(dailyMetrics.metricDate, toDate)
+      ))
+      .orderBy(desc(dailyMetrics.metricDate));
+  }
+
+  async createOrUpdateDailyMetric(metric: InsertDailyMetric): Promise<DailyMetric> {
+    const normalizedDate = new Date(metric.metricDate.getFullYear(), metric.metricDate.getMonth(), metric.metricDate.getDate());
+    
+    // Try to find existing metric for this date
+    const existing = await this.getDailyMetric(metric.propertyId, normalizedDate);
+    
+    if (existing) {
+      // Update existing metric
+      const result = await db.update(dailyMetrics).set({
+        ...metric,
+        metricDate: normalizedDate,
+        updatedAt: new Date()
+      }).where(eq(dailyMetrics.id, existing.id)).returning();
+      return result[0];
+    } else {
+      // Create new metric
+      const result = await db.insert(dailyMetrics).values({
+        ...metric,
+        metricDate: normalizedDate
+      }).returning();
+      return result[0];
+    }
+  }
+
+  async calculateDailyMetrics(propertyId: string, date: Date): Promise<DailyMetric> {
+    const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const nextDay = new Date(normalizedDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    // Get total rooms for the property
+    const totalRoomsResult = await db.select({ count: sql<number>`count(*)` })
+      .from(rooms)
+      .where(and(eq(rooms.propertyId, propertyId), eq(rooms.isActive, true)));
+    const totalRooms = totalRoomsResult[0]?.count || 0;
+
+    // Get occupied rooms for the date (check-in overlapping with the date)
+    const occupiedRoomsResult = await db.select({ count: sql<number>`count(*)` })
+      .from(reservations)
+      .where(and(
+        eq(reservations.propertyId, propertyId),
+        or(
+          eq(reservations.status, 'checked_in'),
+          eq(reservations.status, 'confirmed')
+        ),
+        lte(reservations.arrivalDate, normalizedDate),
+        gt(reservations.departureDate, normalizedDate)
+      ));
+    const occupiedRooms = occupiedRoomsResult[0]?.count || 0;
+
+    // Get out of order rooms
+    const outOfOrderRoomsResult = await db.select({ count: sql<number>`count(*)` })
+      .from(rooms)
+      .where(and(
+        eq(rooms.propertyId, propertyId),
+        eq(rooms.status, 'out_of_order'),
+        eq(rooms.isActive, true)
+      ));
+    const outOfOrderRooms = outOfOrderRoomsResult[0]?.count || 0;
+
+    const availableRooms = totalRooms - occupiedRooms - outOfOrderRooms;
+    const occupancyRate = totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0;
+
+    // Get daily revenue from charges
+    const revenueResult = await db.select({
+      totalRevenue: sql<number>`COALESCE(SUM(${charges.totalAmount}), 0)`,
+      roomRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${charges.chargeCode} = 'ROOM' THEN ${charges.totalAmount} ELSE 0 END), 0)`
+    })
+    .from(charges)
+    .innerJoin(folios, eq(charges.folioId, folios.id))
+    .innerJoin(reservations, eq(folios.reservationId, reservations.id))
+    .where(and(
+      eq(reservations.propertyId, propertyId),
+      gte(charges.chargeDate, normalizedDate),
+      lt(charges.chargeDate, nextDay),
+      eq(charges.isVoided, false)
+    ));
+
+    const totalRevenue = Number(revenueResult[0]?.totalRevenue || 0);
+    const roomRevenue = Number(revenueResult[0]?.roomRevenue || 0);
+    const adr = occupiedRooms > 0 ? roomRevenue / occupiedRooms : 0;
+    const revpar = totalRooms > 0 ? roomRevenue / totalRooms : 0;
+
+    // Get guest counts
+    const guestResult = await db.select({
+      totalGuests: sql<number>`COALESCE(SUM(${reservations.adults} + ${reservations.children}), 0)`,
+      walkIns: sql<number>`COALESCE(SUM(CASE WHEN ${reservations.source} = 'walk_in' THEN 1 ELSE 0 END), 0)`,
+      noShows: sql<number>`COALESCE(SUM(CASE WHEN ${reservations.status} = 'no_show' THEN 1 ELSE 0 END), 0)`,
+      cancellations: sql<number>`COALESCE(SUM(CASE WHEN ${reservations.status} = 'cancelled' THEN 1 ELSE 0 END), 0)`
+    })
+    .from(reservations)
+    .where(and(
+      eq(reservations.propertyId, propertyId),
+      eq(reservations.arrivalDate, normalizedDate)
+    ));
+
+    const totalGuests = Number(guestResult[0]?.totalGuests || 0);
+    const walkIns = Number(guestResult[0]?.walkIns || 0);
+    const noShows = Number(guestResult[0]?.noShows || 0);
+    const cancellations = Number(guestResult[0]?.cancellations || 0);
+
+    // Calculate average length of stay
+    const avgLengthResult = await db.select({
+      avgLength: sql<number>`COALESCE(AVG(${reservations.nights}), 0)`
+    })
+    .from(reservations)
+    .where(and(
+      eq(reservations.propertyId, propertyId),
+      eq(reservations.arrivalDate, normalizedDate),
+      or(
+        eq(reservations.status, 'checked_in'),
+        eq(reservations.status, 'checked_out')
+      )
+    ));
+
+    const avgLengthOfStay = Number(avgLengthResult[0]?.avgLength || 0);
+
+    const metricData: InsertDailyMetric = {
+      propertyId,
+      metricDate: normalizedDate,
+      totalRooms,
+      occupiedRooms,
+      availableRooms,
+      outOfOrderRooms,
+      occupancyRate: occupancyRate.toFixed(2),
+      adr: adr.toFixed(2),
+      revpar: revpar.toFixed(2),
+      totalRevenue: totalRevenue.toFixed(2),
+      roomRevenue: roomRevenue.toFixed(2),
+      totalGuests,
+      walkIns,
+      noShows,
+      cancellations,
+      avgLengthOfStay: avgLengthOfStay.toFixed(2)
+    };
+
+    return await this.createOrUpdateDailyMetric(metricData);
+  }
+
+  // Guest Satisfaction Implementation
+  async getGuestSatisfaction(id: string, propertyId?: string): Promise<GuestSatisfaction | undefined> {
+    const conditions = [eq(guestSatisfaction.id, id)];
+    if (propertyId) {
+      conditions.push(eq(guestSatisfaction.propertyId, propertyId));
+    }
+    const result = await db.select().from(guestSatisfaction).where(and(...conditions)).limit(1);
+    return result[0];
+  }
+
+  async getGuestSatisfactionByProperty(propertyId: string, fromDate?: Date, toDate?: Date): Promise<GuestSatisfaction[]> {
+    const conditions = [eq(guestSatisfaction.propertyId, propertyId)];
+    
+    if (fromDate && toDate) {
+      conditions.push(
+        gte(guestSatisfaction.surveyDate, fromDate),
+        lte(guestSatisfaction.surveyDate, toDate)
+      );
+    }
+    
+    return await db.select().from(guestSatisfaction)
+      .where(and(...conditions))
+      .orderBy(desc(guestSatisfaction.surveyDate));
+  }
+
+  async getGuestSatisfactionByReservation(reservationId: string): Promise<GuestSatisfaction | undefined> {
+    const result = await db.select().from(guestSatisfaction)
+      .where(eq(guestSatisfaction.reservationId, reservationId))
+      .limit(1);
+    return result[0];
+  }
+
+  async createGuestSatisfaction(satisfaction: InsertGuestSatisfaction): Promise<GuestSatisfaction> {
+    const result = await db.insert(guestSatisfaction).values(satisfaction).returning();
+    return result[0];
+  }
+
+  async getAverageRatings(propertyId: string, fromDate?: Date, toDate?: Date): Promise<{
+    overallRating: number;
+    roomRating: number;
+    serviceRating: number;
+    cleanlinessRating: number;
+    valueRating: number;
+    locationRating: number;
+    recommendationRate: number;
+    totalResponses: number;
+  }> {
+    const conditions = [eq(guestSatisfaction.propertyId, propertyId)];
+    
+    if (fromDate && toDate) {
+      conditions.push(
+        gte(guestSatisfaction.surveyDate, fromDate),
+        lte(guestSatisfaction.surveyDate, toDate)
+      );
+    }
+
+    const result = await db.select({
+      overallRating: sql<number>`COALESCE(AVG(${guestSatisfaction.overallRating}), 0)`,
+      roomRating: sql<number>`COALESCE(AVG(${guestSatisfaction.roomRating}), 0)`,
+      serviceRating: sql<number>`COALESCE(AVG(${guestSatisfaction.serviceRating}), 0)`,
+      cleanlinessRating: sql<number>`COALESCE(AVG(${guestSatisfaction.cleanlinessRating}), 0)`,
+      valueRating: sql<number>`COALESCE(AVG(${guestSatisfaction.valueRating}), 0)`,
+      locationRating: sql<number>`COALESCE(AVG(${guestSatisfaction.locationRating}), 0)`,
+      recommendationRate: sql<number>`COALESCE(AVG(CASE WHEN ${guestSatisfaction.recommendToFriend} = true THEN 100.0 ELSE 0.0 END), 0)`,
+      totalResponses: sql<number>`COUNT(*)`
+    })
+    .from(guestSatisfaction)
+    .where(and(...conditions));
+
+    const ratings = result[0];
+    return {
+      overallRating: Number(ratings?.overallRating || 0),
+      roomRating: Number(ratings?.roomRating || 0),
+      serviceRating: Number(ratings?.serviceRating || 0),
+      cleanlinessRating: Number(ratings?.cleanlinessRating || 0),
+      valueRating: Number(ratings?.valueRating || 0),
+      locationRating: Number(ratings?.locationRating || 0),
+      recommendationRate: Number(ratings?.recommendationRate || 0),
+      totalResponses: Number(ratings?.totalResponses || 0)
+    };
+  }
+
+  // Report Management Implementation
+  async getReportDefinition(id: string, propertyId?: string): Promise<ReportDefinition | undefined> {
+    const conditions = [eq(reportDefinitions.id, id)];
+    if (propertyId) {
+      conditions.push(eq(reportDefinitions.propertyId, propertyId));
+    }
+    const result = await db.select().from(reportDefinitions).where(and(...conditions)).limit(1);
+    return result[0];
+  }
+
+  async getReportDefinitions(propertyId: string, type?: string): Promise<ReportDefinition[]> {
+    let whereClause = and(eq(reportDefinitions.propertyId, propertyId), eq(reportDefinitions.isActive, true));
+    
+    if (type) {
+      whereClause = and(whereClause, eq(reportDefinitions.type, type as any));
+    }
+
+    return await db.select().from(reportDefinitions)
+      .where(whereClause)
+      .orderBy(desc(reportDefinitions.createdAt));
+  }
+
+  async createReportDefinition(report: InsertReportDefinition): Promise<ReportDefinition> {
+    const result = await db.insert(reportDefinitions).values(report).returning();
+    return result[0];
+  }
+
+  async updateReportDefinition(id: string, report: Partial<InsertReportDefinition>, propertyId?: string): Promise<ReportDefinition> {
+    const conditions = [eq(reportDefinitions.id, id)];
+    if (propertyId) {
+      conditions.push(eq(reportDefinitions.propertyId, propertyId));
+    }
+    const result = await db.update(reportDefinitions).set({
+      ...report,
+      updatedAt: new Date()
+    }).where(and(...conditions)).returning();
+    return result[0];
+  }
+
+  async deleteReportDefinition(id: string, propertyId?: string): Promise<boolean> {
+    const conditions = [eq(reportDefinitions.id, id)];
+    if (propertyId) {
+      conditions.push(eq(reportDefinitions.propertyId, propertyId));
+    }
+    const result = await db.update(reportDefinitions).set({
+      isActive: false,
+      updatedAt: new Date()
+    }).where(and(...conditions)).returning();
+    return result.length > 0;
+  }
+
+  // Analytics Events Implementation
+  async createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent> {
+    const result = await db.insert(analyticsEvents).values(event).returning();
+    return result[0];
+  }
+
+  async getAnalyticsEvents(propertyId: string, fromDate?: Date, toDate?: Date, eventCategory?: string): Promise<AnalyticsEvent[]> {
+    const conditions = [eq(analyticsEvents.propertyId, propertyId)];
+    
+    if (fromDate && toDate) {
+      conditions.push(
+        gte(analyticsEvents.timestamp, fromDate),
+        lte(analyticsEvents.timestamp, toDate)
+      );
+    }
+    
+    if (eventCategory) {
+      conditions.push(eq(analyticsEvents.eventCategory, eventCategory));
+    }
+
+    return await db.select().from(analyticsEvents)
+      .where(and(...conditions))
+      .orderBy(desc(analyticsEvents.timestamp))
+      .limit(1000); // Limit for performance
+  }
+
+  // Comprehensive Reporting Methods Implementation
+  async getOccupancyReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    date: Date;
+    occupancyRate: number;
+    totalRooms: number;
+    occupiedRooms: number;
+    adr: number;
+    revpar: number;
+    totalRevenue: number;
+  }[]> {
+    return await db.select({
+      date: dailyMetrics.metricDate,
+      occupancyRate: sql<number>`CAST(${dailyMetrics.occupancyRate} AS DECIMAL)`,
+      totalRooms: dailyMetrics.totalRooms,
+      occupiedRooms: dailyMetrics.occupiedRooms,
+      adr: sql<number>`CAST(${dailyMetrics.adr} AS DECIMAL)`,
+      revpar: sql<number>`CAST(${dailyMetrics.revpar} AS DECIMAL)`,
+      totalRevenue: sql<number>`CAST(${dailyMetrics.totalRevenue} AS DECIMAL)`
+    })
+    .from(dailyMetrics)
+    .where(and(
+      eq(dailyMetrics.propertyId, propertyId),
+      gte(dailyMetrics.metricDate, fromDate),
+      lte(dailyMetrics.metricDate, toDate)
+    ))
+    .orderBy(asc(dailyMetrics.metricDate));
+  }
+
+  async getRevenueReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalRevenue: number;
+    roomRevenue: number;
+    otherRevenue: number;
+    avgDailyRate: number;
+    revpar: number;
+    totalNights: number;
+    totalGuests: number;
+  }> {
+    const result = await db.select({
+      totalRevenue: sql<number>`COALESCE(SUM(CAST(${dailyMetrics.totalRevenue} AS DECIMAL)), 0)`,
+      roomRevenue: sql<number>`COALESCE(SUM(CAST(${dailyMetrics.roomRevenue} AS DECIMAL)), 0)`,
+      avgDailyRate: sql<number>`COALESCE(AVG(CAST(${dailyMetrics.adr} AS DECIMAL)), 0)`,
+      revpar: sql<number>`COALESCE(AVG(CAST(${dailyMetrics.revpar} AS DECIMAL)), 0)`,
+      totalNights: sql<number>`COALESCE(SUM(${dailyMetrics.occupiedRooms}), 0)`,
+      totalGuests: sql<number>`COALESCE(SUM(${dailyMetrics.totalGuests}), 0)`
+    })
+    .from(dailyMetrics)
+    .where(and(
+      eq(dailyMetrics.propertyId, propertyId),
+      gte(dailyMetrics.metricDate, fromDate),
+      lte(dailyMetrics.metricDate, toDate)
+    ));
+
+    const data = result[0];
+    const totalRevenue = Number(data?.totalRevenue || 0);
+    const roomRevenue = Number(data?.roomRevenue || 0);
+    
+    return {
+      totalRevenue,
+      roomRevenue,
+      otherRevenue: totalRevenue - roomRevenue,
+      avgDailyRate: Number(data?.avgDailyRate || 0),
+      revpar: Number(data?.revpar || 0),
+      totalNights: Number(data?.totalNights || 0),
+      totalGuests: Number(data?.totalGuests || 0)
+    };
+  }
+
+  async getHousekeepingReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalTasks: number;
+    completedTasks: number;
+    avgCompletionTime: number;
+    tasksByStatus: Record<string, number>;
+    tasksByType: Record<string, number>;
+    staffPerformance: {
+      staffId: string;
+      staffName: string;
+      tasksCompleted: number;
+      avgCompletionTime: number;
+    }[];
+  }> {
+    // Get basic task statistics
+    const taskStats = await db.select({
+      totalTasks: sql<number>`COUNT(*)`,
+      completedTasks: sql<number>`SUM(CASE WHEN ${housekeepingTasks.status} IN ('completed', 'inspected') THEN 1 ELSE 0 END)`,
+      avgCompletionTime: sql<number>`
+        COALESCE(
+          AVG(
+            CASE 
+              WHEN ${housekeepingTasks.completedAt} IS NOT NULL AND ${housekeepingTasks.startedAt} IS NOT NULL 
+              THEN EXTRACT(EPOCH FROM (${housekeepingTasks.completedAt} - ${housekeepingTasks.startedAt})) / 60 
+              ELSE NULL 
+            END
+          ), 
+          0
+        )
+      `
+    })
+    .from(housekeepingTasks)
+    .where(and(
+      eq(housekeepingTasks.propertyId, propertyId),
+      gte(housekeepingTasks.createdAt, fromDate),
+      lte(housekeepingTasks.createdAt, toDate)
+    ));
+
+    // Get tasks by status
+    const statusStats = await db.select({
+      status: housekeepingTasks.status,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(housekeepingTasks)
+    .where(and(
+      eq(housekeepingTasks.propertyId, propertyId),
+      gte(housekeepingTasks.createdAt, fromDate),
+      lte(housekeepingTasks.createdAt, toDate)
+    ))
+    .groupBy(housekeepingTasks.status);
+
+    // Get tasks by type
+    const typeStats = await db.select({
+      taskType: housekeepingTasks.taskType,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(housekeepingTasks)
+    .where(and(
+      eq(housekeepingTasks.propertyId, propertyId),
+      gte(housekeepingTasks.createdAt, fromDate),
+      lte(housekeepingTasks.createdAt, toDate)
+    ))
+    .groupBy(housekeepingTasks.taskType);
+
+    // Get staff performance
+    const staffPerformance = await db.select({
+      staffId: housekeepingTasks.assignedTo,
+      staffName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, 'Unassigned')`,
+      tasksCompleted: sql<number>`COUNT(*)`,
+      avgCompletionTime: sql<number>`
+        COALESCE(
+          AVG(
+            CASE 
+              WHEN ${housekeepingTasks.completedAt} IS NOT NULL AND ${housekeepingTasks.startedAt} IS NOT NULL 
+              THEN EXTRACT(EPOCH FROM (${housekeepingTasks.completedAt} - ${housekeepingTasks.startedAt})) / 60 
+              ELSE NULL 
+            END
+          ), 
+          0
+        )
+      `
+    })
+    .from(housekeepingTasks)
+    .leftJoin(users, eq(housekeepingTasks.assignedTo, users.id))
+    .where(and(
+      eq(housekeepingTasks.propertyId, propertyId),
+      gte(housekeepingTasks.createdAt, fromDate),
+      lte(housekeepingTasks.createdAt, toDate),
+      or(
+        eq(housekeepingTasks.status, 'completed'),
+        eq(housekeepingTasks.status, 'inspected')
+      )
+    ))
+    .groupBy(housekeepingTasks.assignedTo, users.firstName, users.lastName)
+    .orderBy(desc(sql`tasksCompleted`));
+
+    const tasksByStatus: Record<string, number> = {};
+    statusStats.forEach(stat => {
+      tasksByStatus[stat.status] = Number(stat.count);
+    });
+
+    const tasksByType: Record<string, number> = {};
+    typeStats.forEach(stat => {
+      tasksByType[stat.taskType] = Number(stat.count);
+    });
+
+    return {
+      totalTasks: Number(taskStats[0]?.totalTasks || 0),
+      completedTasks: Number(taskStats[0]?.completedTasks || 0),
+      avgCompletionTime: Number(taskStats[0]?.avgCompletionTime || 0),
+      tasksByStatus,
+      tasksByType,
+      staffPerformance: staffPerformance.map(staff => ({
+        staffId: staff.staffId || '',
+        staffName: staff.staffName || 'Unassigned',
+        tasksCompleted: Number(staff.tasksCompleted),
+        avgCompletionTime: Number(staff.avgCompletionTime)
+      }))
+    };
+  }
+
+  async getGuestAnalytics(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalGuests: number;
+    newGuests: number;
+    returningGuests: number;
+    vipGuests: number;
+    avgLengthOfStay: number;
+    topSourceMarkets: { source: string; count: number }[];
+    guestSatisfactionSummary: {
+      avgOverallRating: number;
+      totalSurveys: number;
+      recommendationRate: number;
+    };
+  }> {
+    // Get basic guest statistics
+    const guestStats = await db.select({
+      totalGuests: sql<number>`COUNT(DISTINCT ${reservations.guestId})`,
+      avgLengthOfStay: sql<number>`COALESCE(AVG(${reservations.nights}), 0)`
+    })
+    .from(reservations)
+    .where(and(
+      eq(reservations.propertyId, propertyId),
+      gte(reservations.arrivalDate, fromDate),
+      lte(reservations.arrivalDate, toDate)
+    ));
+
+    // Get new vs returning guests
+    const newReturnStats = await db.select({
+      newGuests: sql<number>`
+        COUNT(DISTINCT CASE 
+          WHEN (
+            SELECT COUNT(*) 
+            FROM ${reservations} r2 
+            WHERE r2.guest_id = ${reservations.guestId} 
+            AND r2.arrival_date < ${reservations.arrivalDate}
+          ) = 0 
+          THEN ${reservations.guestId} 
+        END)
+      `,
+      returningGuests: sql<number>`
+        COUNT(DISTINCT CASE 
+          WHEN (
+            SELECT COUNT(*) 
+            FROM ${reservations} r2 
+            WHERE r2.guest_id = ${reservations.guestId} 
+            AND r2.arrival_date < ${reservations.arrivalDate}
+          ) > 0 
+          THEN ${reservations.guestId} 
+        END)
+      `
+    })
+    .from(reservations)
+    .where(and(
+      eq(reservations.propertyId, propertyId),
+      gte(reservations.arrivalDate, fromDate),
+      lte(reservations.arrivalDate, toDate)
+    ));
+
+    // Get VIP guests count
+    const vipStats = await db.select({
+      vipGuests: sql<number>`COUNT(DISTINCT ${guests.id})`
+    })
+    .from(reservations)
+    .innerJoin(guests, eq(reservations.guestId, guests.id))
+    .where(and(
+      eq(reservations.propertyId, propertyId),
+      eq(guests.vipStatus, true),
+      gte(reservations.arrivalDate, fromDate),
+      lte(reservations.arrivalDate, toDate)
+    ));
+
+    // Get top source markets
+    const sourceMarkets = await db.select({
+      source: reservations.source,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(reservations)
+    .where(and(
+      eq(reservations.propertyId, propertyId),
+      gte(reservations.arrivalDate, fromDate),
+      lte(reservations.arrivalDate, toDate)
+    ))
+    .groupBy(reservations.source)
+    .orderBy(desc(sql`count`))
+    .limit(5);
+
+    // Get guest satisfaction summary
+    const satisfactionSummary = await db.select({
+      avgOverallRating: sql<number>`COALESCE(AVG(${guestSatisfaction.overallRating}), 0)`,
+      totalSurveys: sql<number>`COUNT(*)`,
+      recommendationRate: sql<number>`COALESCE(AVG(CASE WHEN ${guestSatisfaction.recommendToFriend} = true THEN 100.0 ELSE 0.0 END), 0)`
+    })
+    .from(guestSatisfaction)
+    .where(and(
+      eq(guestSatisfaction.propertyId, propertyId),
+      gte(guestSatisfaction.surveyDate, fromDate),
+      lte(guestSatisfaction.surveyDate, toDate)
+    ));
+
+    return {
+      totalGuests: Number(guestStats[0]?.totalGuests || 0),
+      newGuests: Number(newReturnStats[0]?.newGuests || 0),
+      returningGuests: Number(newReturnStats[0]?.returningGuests || 0),
+      vipGuests: Number(vipStats[0]?.vipGuests || 0),
+      avgLengthOfStay: Number(guestStats[0]?.avgLengthOfStay || 0),
+      topSourceMarkets: sourceMarkets.map(market => ({
+        source: market.source,
+        count: Number(market.count)
+      })),
+      guestSatisfactionSummary: {
+        avgOverallRating: Number(satisfactionSummary[0]?.avgOverallRating || 0),
+        totalSurveys: Number(satisfactionSummary[0]?.totalSurveys || 0),
+        recommendationRate: Number(satisfactionSummary[0]?.recommendationRate || 0)
+      }
+    };
   }
 
   // Availability Management Implementation

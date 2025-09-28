@@ -85,6 +85,24 @@ export const serviceRequestTypeEnum = pgEnum("service_request_type", [
   "other"
 ]);
 
+export const reportTypeEnum = pgEnum("report_type", [
+  "financial",
+  "operational", 
+  "guest_analytics",
+  "housekeeping",
+  "reservations",
+  "custom"
+]);
+
+export const reportFrequencyEnum = pgEnum("report_frequency", [
+  "daily",
+  "weekly", 
+  "monthly",
+  "quarterly",
+  "yearly",
+  "on_demand"
+]);
+
 // Core Tables
 
 // Properties (for multi-property support)
@@ -327,6 +345,79 @@ export const housekeepingTasks = pgTable("housekeeping_tasks", {
   updatedAt: timestamp("updated_at").notNull().defaultNow()
 });
 
+// Daily Hotel Metrics (for operational reporting)
+export const dailyMetrics = pgTable("daily_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  metricDate: timestamp("metric_date").notNull(),
+  totalRooms: integer("total_rooms").notNull(),
+  occupiedRooms: integer("occupied_rooms").notNull().default(0),
+  availableRooms: integer("available_rooms").notNull().default(0),
+  outOfOrderRooms: integer("out_of_order_rooms").notNull().default(0),
+  occupancyRate: decimal("occupancy_rate", { precision: 5, scale: 2 }).notNull().default('0'),
+  adr: decimal("adr", { precision: 10, scale: 2 }).notNull().default('0'), // Average Daily Rate
+  revpar: decimal("revpar", { precision: 10, scale: 2 }).notNull().default('0'), // Revenue Per Available Room
+  totalRevenue: decimal("total_revenue", { precision: 10, scale: 2 }).notNull().default('0'),
+  roomRevenue: decimal("room_revenue", { precision: 10, scale: 2 }).notNull().default('0'),
+  totalGuests: integer("total_guests").notNull().default(0),
+  walkIns: integer("walk_ins").notNull().default(0),
+  noShows: integer("no_shows").notNull().default(0),
+  cancellations: integer("cancellations").notNull().default(0),
+  avgLengthOfStay: decimal("avg_length_of_stay", { precision: 5, scale: 2 }).notNull().default('0'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow()
+});
+
+// Guest Satisfaction Surveys
+export const guestSatisfaction = pgTable("guest_satisfaction", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  reservationId: varchar("reservation_id").notNull().references(() => reservations.id),
+  guestId: varchar("guest_id").notNull().references(() => guests.id),
+  overallRating: integer("overall_rating").notNull(), // 1-5 scale
+  roomRating: integer("room_rating"), // 1-5 scale
+  serviceRating: integer("service_rating"), // 1-5 scale
+  cleanlinessRating: integer("cleanliness_rating"), // 1-5 scale
+  valueRating: integer("value_rating"), // 1-5 scale
+  locationRating: integer("location_rating"), // 1-5 scale
+  recommendToFriend: boolean("recommend_to_friend"),
+  comments: text("comments"),
+  surveyDate: timestamp("survey_date").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow()
+});
+
+// Report Definitions (for saved reports)
+export const reportDefinitions = pgTable("report_definitions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: reportTypeEnum("type").notNull(),
+  frequency: reportFrequencyEnum("frequency").notNull().default("on_demand"),
+  parameters: json("parameters").$type<Record<string, any>>().default({}),
+  isActive: boolean("is_active").notNull().default(true),
+  lastRunDate: timestamp("last_run_date"),
+  nextRunDate: timestamp("next_run_date"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow()
+});
+
+// Analytics Events (for user behavior tracking)
+export const analyticsEvents = pgTable("analytics_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").references(() => properties.id),
+  userId: varchar("user_id").references(() => users.id),
+  sessionId: text("session_id"),
+  eventType: text("event_type").notNull(), // login, reservation_created, payment_processed, etc.
+  eventCategory: text("event_category").notNull(), // auth, reservations, billing, housekeeping, etc.
+  eventData: json("event_data").$type<Record<string, any>>().default({}),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").notNull().defaultNow()
+});
+
 // Insert Schemas
 export const insertPropertySchema = createInsertSchema(properties).omit({
   id: true,
@@ -428,6 +519,32 @@ export const insertHousekeepingTaskSchema = createInsertSchema(housekeepingTasks
   updatedAt: true
 });
 
+export const insertDailyMetricSchema = createInsertSchema(dailyMetrics).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertGuestSatisfactionSchema = createInsertSchema(guestSatisfaction).omit({
+  id: true,
+  surveyDate: true,
+  createdAt: true
+});
+
+export const insertReportDefinitionSchema = createInsertSchema(reportDefinitions).omit({
+  id: true,
+  lastRunDate: true,
+  nextRunDate: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertAnalyticsEventSchema = createInsertSchema(analyticsEvents).omit({
+  id: true,
+  timestamp: true,
+  createdAt: true
+});
+
 // Type Exports
 export type InsertProperty = z.infer<typeof insertPropertySchema>;
 export type Property = typeof properties.$inferSelect;
@@ -467,3 +584,15 @@ export type ServiceRequest = typeof serviceRequests.$inferSelect;
 
 export type InsertHousekeepingTask = z.infer<typeof insertHousekeepingTaskSchema>;
 export type HousekeepingTask = typeof housekeepingTasks.$inferSelect;
+
+export type InsertDailyMetric = z.infer<typeof insertDailyMetricSchema>;
+export type DailyMetric = typeof dailyMetrics.$inferSelect;
+
+export type InsertGuestSatisfaction = z.infer<typeof insertGuestSatisfactionSchema>;
+export type GuestSatisfaction = typeof guestSatisfaction.$inferSelect;
+
+export type InsertReportDefinition = z.infer<typeof insertReportDefinitionSchema>;
+export type ReportDefinition = typeof reportDefinitions.$inferSelect;
+
+export type InsertAnalyticsEvent = z.infer<typeof insertAnalyticsEventSchema>;
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
