@@ -22,6 +22,9 @@ import {
   insertFolioSchema,
   insertChargeSchema,
   insertPaymentSchema,
+  insertGuestSatisfactionSchema,
+  insertReportDefinitionSchema,
+  insertAnalyticsEventSchema,
   type User,
   type Property,
   type Room,
@@ -1506,6 +1509,464 @@ export function registerBillingRoutes(app: Express) {
   );
 }
 
+// Reporting and Analytics Routes  
+export function registerReportingRoutes(app: Express) {
+  // Dashboard Analytics - Key metrics for dashboard
+  app.get("/api/dashboard/analytics",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const lastMonth = new Date(today);
+        lastMonth.setMonth(lastMonth.getMonth() - 1);
+        
+        // Get today's metrics
+        const todayMetrics = await storage.getDailyMetric(propertyId, today);
+        const yesterdayMetrics = await storage.getDailyMetric(propertyId, yesterday);
+        
+        // Calculate real-time metrics if no daily metrics available
+        const realtimeMetrics = !todayMetrics ? 
+          await storage.calculateDailyMetrics(propertyId, today) : null;
+        
+        // Get recent guest satisfaction ratings
+        const recentRatings = await storage.getAverageRatings(propertyId, lastMonth, today);
+        
+        // Get monthly metrics for trends
+        const monthlyMetrics = await storage.getDailyMetrics(propertyId, lastMonth, today);
+        
+        res.json({
+          todayMetrics: todayMetrics || realtimeMetrics,
+          yesterdayMetrics,
+          monthlyTrend: monthlyMetrics,
+          guestSatisfaction: recentRatings
+        });
+      } catch (error) {
+        console.error("Dashboard analytics error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  // Daily Metrics Routes
+  app.get("/api/daily-metrics",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { fromDate, toDate } = req.query;
+        
+        if (!fromDate || !toDate) {
+          return res.status(400).json({ error: "fromDate and toDate are required" });
+        }
+        
+        const metrics = await storage.getDailyMetrics(
+          propertyId, 
+          new Date(fromDate as string), 
+          new Date(toDate as string)
+        );
+        
+        res.json({ metrics });
+      } catch (error) {
+        console.error("Get daily metrics error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.post("/api/daily-metrics/calculate",
+    authenticate,
+    authorize("reports.manage"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { date } = req.body;
+        
+        if (!date) {
+          return res.status(400).json({ error: "Date is required" });
+        }
+        
+        const metrics = await storage.calculateDailyMetrics(propertyId, new Date(date));
+        
+        res.json({ metrics });
+      } catch (error) {
+        console.error("Calculate daily metrics error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  // Guest Satisfaction Routes
+  app.get("/api/guest-satisfaction",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { fromDate, toDate } = req.query;
+        
+        const satisfaction = await storage.getGuestSatisfactionByProperty(
+          propertyId,
+          fromDate ? new Date(fromDate as string) : undefined,
+          toDate ? new Date(toDate as string) : undefined
+        );
+        
+        res.json({ satisfaction });
+      } catch (error) {
+        console.error("Get guest satisfaction error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.get("/api/guest-satisfaction/ratings",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { fromDate, toDate } = req.query;
+        
+        const ratings = await storage.getAverageRatings(
+          propertyId,
+          fromDate ? new Date(fromDate as string) : undefined,
+          toDate ? new Date(toDate as string) : undefined
+        );
+        
+        res.json({ ratings });
+      } catch (error) {
+        console.error("Get average ratings error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.post("/api/guest-satisfaction",
+    authenticate,
+    authorize("reports.manage"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const satisfactionData = insertGuestSatisfactionSchema.parse(req.body);
+        const propertyId = req.user?.propertyId!;
+        
+        // Ensure property ID matches authenticated user's property
+        if (satisfactionData.propertyId !== propertyId) {
+          return res.status(403).json({ error: "Property access denied" });
+        }
+        
+        const satisfaction = await storage.createGuestSatisfaction(satisfactionData);
+        
+        res.status(201).json({ satisfaction });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return res.status(400).json({ error: "Validation error", details: error.errors });
+        }
+        console.error("Create guest satisfaction error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  // Report Management Routes
+  app.get("/api/reports/definitions",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { type } = req.query;
+        
+        const definitions = await storage.getReportDefinitions(
+          propertyId, 
+          type as string
+        );
+        
+        res.json({ definitions });
+      } catch (error) {
+        console.error("Get report definitions error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.get("/api/reports/definitions/:id",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const propertyId = req.user?.propertyId!;
+        
+        const definition = await storage.getReportDefinition(id, propertyId);
+        
+        if (!definition) {
+          return res.status(404).json({ error: "Report definition not found" });
+        }
+        
+        res.json({ definition });
+      } catch (error) {
+        console.error("Get report definition error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.post("/api/reports/definitions",
+    authenticate,
+    authorize("reports.manage"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const reportData = insertReportDefinitionSchema.parse(req.body);
+        const propertyId = req.user?.propertyId!;
+        
+        // Ensure property ID matches authenticated user's property
+        if (reportData.propertyId !== propertyId) {
+          return res.status(403).json({ error: "Property access denied" });
+        }
+        
+        // Set the created by user
+        const reportWithUser = {
+          ...reportData,
+          createdBy: req.user?.id!
+        };
+        
+        const definition = await storage.createReportDefinition(reportWithUser);
+        
+        res.status(201).json({ definition });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return res.status(400).json({ error: "Validation error", details: error.errors });
+        }
+        console.error("Create report definition error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.put("/api/reports/definitions/:id",
+    authenticate,
+    authorize("reports.manage"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        const propertyId = req.user?.propertyId!;
+        
+        const definition = await storage.updateReportDefinition(id, updateData, propertyId);
+        
+        res.json({ definition });
+      } catch (error) {
+        console.error("Update report definition error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.delete("/api/reports/definitions/:id",
+    authenticate,
+    authorize("reports.manage"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const propertyId = req.user?.propertyId!;
+        
+        const success = await storage.deleteReportDefinition(id, propertyId);
+        
+        if (!success) {
+          return res.status(404).json({ error: "Report definition not found" });
+        }
+        
+        res.json({ message: "Report definition deleted successfully" });
+      } catch (error) {
+        console.error("Delete report definition error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  // Analytics Events Routes
+  app.get("/api/analytics/events",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { fromDate, toDate, eventCategory } = req.query;
+        
+        const events = await storage.getAnalyticsEvents(
+          propertyId,
+          fromDate ? new Date(fromDate as string) : undefined,
+          toDate ? new Date(toDate as string) : undefined,
+          eventCategory as string
+        );
+        
+        res.json({ events });
+      } catch (error) {
+        console.error("Get analytics events error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.post("/api/analytics/events",
+    authenticate,
+    authorize("reports.manage"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const eventData = insertAnalyticsEventSchema.parse(req.body);
+        const propertyId = req.user?.propertyId!;
+        
+        // Ensure property ID matches authenticated user's property
+        if (eventData.propertyId !== propertyId) {
+          return res.status(403).json({ error: "Property access denied" });
+        }
+        
+        // Set the user who triggered the event
+        const eventWithUser = {
+          ...eventData,
+          userId: req.user?.id!
+        };
+        
+        const event = await storage.createAnalyticsEvent(eventWithUser);
+        
+        res.status(201).json({ event });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return res.status(400).json({ error: "Validation error", details: error.errors });
+        }
+        console.error("Create analytics event error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  // Comprehensive Reporting Routes
+  app.get("/api/reports/occupancy",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { fromDate, toDate } = req.query;
+        
+        if (!fromDate || !toDate) {
+          return res.status(400).json({ error: "fromDate and toDate are required" });
+        }
+        
+        const report = await storage.getOccupancyReport(
+          propertyId,
+          new Date(fromDate as string),
+          new Date(toDate as string)
+        );
+        
+        res.json({ report });
+      } catch (error) {
+        console.error("Get occupancy report error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.get("/api/reports/revenue",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { fromDate, toDate } = req.query;
+        
+        if (!fromDate || !toDate) {
+          return res.status(400).json({ error: "fromDate and toDate are required" });
+        }
+        
+        const report = await storage.getRevenueReport(
+          propertyId,
+          new Date(fromDate as string),
+          new Date(toDate as string)
+        );
+        
+        res.json({ report });
+      } catch (error) {
+        console.error("Get revenue report error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.get("/api/reports/housekeeping",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { fromDate, toDate } = req.query;
+        
+        if (!fromDate || !toDate) {
+          return res.status(400).json({ error: "fromDate and toDate are required" });
+        }
+        
+        const report = await storage.getHousekeepingReport(
+          propertyId,
+          new Date(fromDate as string),
+          new Date(toDate as string)
+        );
+        
+        res.json({ report });
+      } catch (error) {
+        console.error("Get housekeeping report error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  app.get("/api/reports/guest-analytics",
+    authenticate,
+    authorize("reports.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId!;
+        const { fromDate, toDate } = req.query;
+        
+        if (!fromDate || !toDate) {
+          return res.status(400).json({ error: "fromDate and toDate are required" });
+        }
+        
+        const report = await storage.getGuestAnalytics(
+          propertyId,
+          new Date(fromDate as string),
+          new Date(toDate as string)
+        );
+        
+        res.json({ report });
+      } catch (error) {
+        console.error("Get guest analytics error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+}
+
 // Register all HMS routes
 export function registerHMSRoutes(app: Express) {
   registerAuthRoutes(app);
@@ -1520,4 +1981,5 @@ export function registerHMSRoutes(app: Express) {
   registerBillingRoutes(app);
   registerServiceRequestRoutes(app);
   registerHousekeepingRoutes(app);
+  registerReportingRoutes(app);
 }
