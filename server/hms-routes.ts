@@ -19,6 +19,9 @@ import {
   insertReservationSchema,
   insertServiceRequestSchema,
   insertHousekeepingTaskSchema,
+  insertFolioSchema,
+  insertChargeSchema,
+  insertPaymentSchema,
   type User,
   type Property,
   type Room,
@@ -967,9 +970,78 @@ export function registerHousekeepingRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
-        const updateData = req.body;
+        const clientData = req.body;
         
-        const task = await storage.updateHousekeepingTask(id, updateData);
+        // Get existing task to verify property access and current state
+        const existingTask = await storage.getHousekeepingTask(id);
+        if (!existingTask) {
+          return res.status(404).json({ error: "Task not found" });
+        }
+        
+        // Verify property access
+        if (existingTask.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        // Build server-controlled update data
+        const serverUpdateData: any = {
+          // Allow client to update these fields
+          assignedTo: clientData.assignedTo,
+          priority: clientData.priority,
+          notes: clientData.notes,
+          estimatedDuration: clientData.estimatedDuration,
+        };
+        
+        // Handle status transitions with server-side timestamp control and validation
+        if (clientData.status && clientData.status !== existingTask.status) {
+          // Define valid status transitions
+          const validTransitions: Record<string, string[]> = {
+            'pending': ['in_progress', 'cancelled'],
+            'in_progress': ['completed', 'cancelled'], 
+            'completed': ['inspected', 'cancelled'],
+            'inspected': ['cancelled'],
+            'cancelled': [] // No transitions from cancelled
+          };
+          
+          // Validate status transition
+          const allowedNextStates = validTransitions[existingTask.status] || [];
+          if (!allowedNextStates.includes(clientData.status)) {
+            return res.status(422).json({ 
+              error: `Invalid status transition from ${existingTask.status} to ${clientData.status}. Valid transitions: ${allowedNextStates.join(', ')}`
+            });
+          }
+          
+          // Set the new status after validation
+          serverUpdateData.status = clientData.status;
+          
+          // Set appropriate timestamps based on status transitions
+          switch (clientData.status) {
+            case 'in_progress':
+              serverUpdateData.startedAt = new Date();
+              break;
+            case 'completed':
+              serverUpdateData.completedAt = new Date();
+              break;
+            case 'inspected':
+              serverUpdateData.inspectedBy = req.user?.id;
+              serverUpdateData.inspectedAt = new Date();
+              serverUpdateData.inspectionNotes = clientData.inspectionNotes;
+              break;
+            case 'cancelled':
+              // No additional fields needed for cancellation
+              break;
+          }
+        }
+        
+        // Server-side inspection handling
+        if (clientData.inspectionNotes && existingTask.status === 'completed') {
+          serverUpdateData.inspectedBy = req.user?.id;
+          serverUpdateData.inspectedAt = new Date();
+          serverUpdateData.inspectionNotes = clientData.inspectionNotes;
+          serverUpdateData.status = 'inspected';
+        }
+        
+        const task = await storage.updateHousekeepingTask(id, serverUpdateData);
         res.json({ task });
       } catch (error) {
         console.error("Update housekeeping task error:", error);
@@ -1197,7 +1269,7 @@ export function registerChargeRoutes(app: Express) {
           ...chargeData,
           postedBy: req.user?.id,
           postingDate: new Date(),
-          chargeDate: chargeData.chargeDate || new Date()
+          chargeDate: new Date()
         };
         
         const charge = await storage.createCharge(chargeWithUser);

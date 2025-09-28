@@ -63,8 +63,9 @@ export const paymentStatusEnum = pgEnum("payment_status", [
 
 export const serviceRequestStatusEnum = pgEnum("service_request_status", [
   "pending",
-  "in_progress",
+  "in_progress", 
   "completed",
+  "inspected",
   "cancelled"
 ]);
 

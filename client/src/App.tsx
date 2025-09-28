@@ -13,6 +13,7 @@ import Reservations from "@/pages/Reservations";
 import Rooms from "@/pages/Rooms";
 import Guests from "@/pages/Guests";
 import Billing from "@/pages/Billing";
+import Housekeeping from "@/pages/Housekeeping";
 import NotFound from "@/pages/NotFound";
 
 function Router() {
@@ -23,7 +24,7 @@ function Router() {
       <Route path="/reservations" component={Reservations} />
       <Route path="/rooms" component={Rooms} />
       <Route path="/guests" component={Guests} />
-      <Route path="/housekeeping" component={() => <div className="p-6"><h1 className="text-2xl font-bold">Housekeeping - Coming Soon</h1></div>} />
+      <Route path="/housekeeping" component={Housekeeping} />
       <Route path="/billing" component={Billing} />
       <Route path="/reports" component={() => <div className="p-6"><h1 className="text-2xl font-bold">Reports - Coming Soon</h1></div>} />
       <Route path="/settings" component={() => <div className="p-6"><h1 className="text-2xl font-bold">Settings - Coming Soon</h1></div>} />
