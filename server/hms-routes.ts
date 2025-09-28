@@ -156,14 +156,18 @@ export function registerUserRoutes(app: Express) {
 
 // Property Management Routes
 export function registerPropertyRoutes(app: Express) {
-  // Get all properties
+  // Get all properties (user-scoped for security)
   app.get("/api/properties", 
     authenticate, 
     authorize("properties.view"),
     async (req: AuthRequest, res: Response) => {
       try {
-        const properties = await storage.getProperties();
-        res.json({ properties });
+        const allProperties = await storage.getProperties();
+        // Filter to only properties the user has access to
+        const userProperties = allProperties.filter(property => 
+          property.id === req.user?.propertyId
+        );
+        res.json({ properties: userProperties });
       } catch (error) {
         console.error("Get properties error:", error);
         res.status(500).json({ error: "Internal server error" });
@@ -369,8 +373,22 @@ export function registerGuestRoutes(app: Express) {
           return res.status(400).json({ error: "Search query required" });
         }
         
-        const guests = await storage.searchGuests(query as string);
-        res.json({ guests });
+        // Get all guests first, then filter by property through reservations
+        const allGuests = await storage.searchGuests(query as string);
+        
+        // Get property guests by checking their stay history  
+        const propertyGuests = [];
+        for (const guest of allGuests) {
+          const stayHistory = await storage.getGuestStayHistory(guest.id);
+          const hasPropertyStay = stayHistory.some(stay => 
+            stay.propertyId === req.user?.propertyId
+          );
+          if (hasPropertyStay) {
+            propertyGuests.push(guest);
+          }
+        }
+        
+        res.json({ guests: propertyGuests });
       } catch (error) {
         console.error("Search guests error:", error);
         res.status(500).json({ error: "Internal server error" });
@@ -961,6 +979,461 @@ export function registerHousekeepingRoutes(app: Express) {
   );
 }
 
+// Folio Management Routes
+export function registerFolioRoutes(app: Express) {
+  // Get folio by ID
+  app.get("/api/folios/:id", 
+    authenticate, 
+    authorize("billing.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const folio = await storage.getFolio(id);
+        
+        if (!folio) {
+          return res.status(404).json({ error: "Folio not found" });
+        }
+        
+        // Verify property access
+        if (folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        res.json({ folio });
+      } catch (error) {
+        console.error("Get folio error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get folio by reservation
+  app.get("/api/reservations/:reservationId/folio", 
+    authenticate, 
+    authorize("billing.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { reservationId } = req.params;
+        const folio = await storage.getFolioByReservation(reservationId);
+        
+        if (!folio) {
+          return res.status(404).json({ error: "Folio not found" });
+        }
+        
+        // Verify property access
+        if (folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        res.json({ folio });
+      } catch (error) {
+        console.error("Get folio by reservation error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get folios by guest
+  app.get("/api/guests/:guestId/folios", 
+    authenticate, 
+    authorize("billing.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { guestId } = req.params;
+        const folios = await storage.getFoliosByGuest(guestId);
+        
+        // Filter folios to only those belonging to user's property
+        const propertyFolios = folios.filter(folio => folio.propertyId === req.user?.propertyId);
+        
+        res.json({ folios: propertyFolios });
+      } catch (error) {
+        console.error("Get folios by guest error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Create folio
+  app.post("/api/folios", 
+    authenticate, 
+    authorize("billing.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const folioData = insertFolioSchema.parse(req.body);
+        
+        // Override propertyId with authenticated user's property for security
+        const securefolioData = {
+          ...folioData,
+          propertyId: req.user?.propertyId || ""
+        };
+        
+        if (!securefolioData.propertyId) {
+          return res.status(400).json({ error: "User property not found" });
+        }
+        
+        const folio = await storage.createFolio(securefolioData);
+        
+        res.status(201).json({ folio });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return res.status(400).json({ error: "Validation error", details: error.errors });
+        }
+        console.error("Create folio error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update folio
+  app.put("/api/folios/:id", 
+    authenticate, 
+    authorize("billing.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        
+        // Verify folio exists and user has property access
+        const existingFolio = await storage.getFolio(id);
+        if (!existingFolio) {
+          return res.status(404).json({ error: "Folio not found" });
+        }
+        
+        if (existingFolio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        // Prevent updates to closed folios
+        if (existingFolio.status === 'closed') {
+          return res.status(422).json({ error: "Cannot update closed folio" });
+        }
+        
+        const folio = await storage.updateFolio(id, updateData);
+        res.json({ folio });
+      } catch (error) {
+        console.error("Update folio error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+}
+
+// Charge Management Routes
+export function registerChargeRoutes(app: Express) {
+  // Get charge by ID
+  app.get("/api/charges/:id", 
+    authenticate, 
+    authorize("billing.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const charge = await storage.getCharge(id);
+        
+        if (!charge) {
+          return res.status(404).json({ error: "Charge not found" });
+        }
+        
+        res.json({ charge });
+      } catch (error) {
+        console.error("Get charge error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get charges by folio
+  app.get("/api/folios/:folioId/charges", 
+    authenticate, 
+    authorize("billing.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { folioId } = req.params;
+        
+        // Verify folio exists and user has property access
+        const folio = await storage.getFolio(folioId);
+        if (!folio) {
+          return res.status(404).json({ error: "Folio not found" });
+        }
+        
+        if (folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        const charges = await storage.getChargesByFolio(folioId);
+        
+        res.json({ charges });
+      } catch (error) {
+        console.error("Get charges by folio error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Create charge
+  app.post("/api/charges", 
+    authenticate, 
+    authorize("billing.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const chargeData = insertChargeSchema.parse(req.body);
+        
+        // Verify folio exists and user has property access
+        const folio = await storage.getFolio(chargeData.folioId);
+        if (!folio) {
+          return res.status(404).json({ error: "Folio not found" });
+        }
+        
+        if (folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        // Prevent charges to closed folios
+        if (folio.status === 'closed') {
+          return res.status(422).json({ error: "Cannot add charges to closed folio" });
+        }
+        
+        // Set the posting user and timestamp from the authenticated user
+        const chargeWithUser = {
+          ...chargeData,
+          postedBy: req.user?.id,
+          postingDate: new Date(),
+          chargeDate: chargeData.chargeDate || new Date()
+        };
+        
+        const charge = await storage.createCharge(chargeWithUser);
+        
+        res.status(201).json({ charge });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return res.status(400).json({ error: "Validation error", details: error.errors });
+        }
+        console.error("Create charge error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update charge
+  app.put("/api/charges/:id", 
+    authenticate, 
+    authorize("billing.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        
+        const charge = await storage.updateCharge(id, updateData);
+        res.json({ charge });
+      } catch (error) {
+        console.error("Update charge error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Void charge
+  app.post("/api/charges/:id/void", 
+    authenticate, 
+    authorize("billing.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { voidReason } = req.body;
+        
+        if (!voidReason) {
+          return res.status(400).json({ error: "Void reason is required" });
+        }
+        
+        // Verify charge exists and user has property access
+        const charge = await storage.getCharge(id);
+        if (!charge) {
+          return res.status(404).json({ error: "Charge not found" });
+        }
+        
+        // Get folio to verify property access
+        const folio = await storage.getFolio(charge.folioId);
+        if (!folio) {
+          return res.status(404).json({ error: "Associated folio not found" });
+        }
+        
+        if (folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        // Prevent voiding already voided charges
+        if (charge.isVoided) {
+          return res.status(422).json({ error: "Charge is already voided" });
+        }
+        
+        const voidedCharge = await storage.voidCharge(id, voidReason, req.user?.id || "");
+        res.json({ charge: voidedCharge });
+      } catch (error) {
+        console.error("Void charge error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+}
+
+// Payment Management Routes
+export function registerPaymentRoutes(app: Express) {
+  // Get payment by ID
+  app.get("/api/payments/:id", 
+    authenticate, 
+    authorize("billing.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const payment = await storage.getPayment(id);
+        
+        if (!payment) {
+          return res.status(404).json({ error: "Payment not found" });
+        }
+        
+        res.json({ payment });
+      } catch (error) {
+        console.error("Get payment error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get payments by folio
+  app.get("/api/folios/:folioId/payments", 
+    authenticate, 
+    authorize("billing.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { folioId } = req.params;
+        
+        // Verify folio exists and user has property access
+        const folio = await storage.getFolio(folioId);
+        if (!folio) {
+          return res.status(404).json({ error: "Folio not found" });
+        }
+        
+        if (folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        const payments = await storage.getPaymentsByFolio(folioId);
+        
+        res.json({ payments });
+      } catch (error) {
+        console.error("Get payments by folio error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Create payment
+  app.post("/api/payments", 
+    authenticate, 
+    authorize("billing.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const paymentData = insertPaymentSchema.parse(req.body);
+        
+        // Verify folio exists and user has property access
+        const folio = await storage.getFolio(paymentData.folioId);
+        if (!folio) {
+          return res.status(404).json({ error: "Folio not found" });
+        }
+        
+        if (folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+        
+        // Prevent payments to closed folios
+        if (folio.status === 'closed') {
+          return res.status(422).json({ error: "Cannot add payments to closed folio" });
+        }
+        
+        // Restrict to safe payment methods for now (no card processing)
+        const safePaymentMethods = ['cash', 'check', 'bank_transfer', 'other'];
+        if (!safePaymentMethods.includes(paymentData.paymentMethod)) {
+          return res.status(422).json({ error: "Payment method not supported - card processing requires gateway integration" });
+        }
+        
+        // Set the posting user and timestamp from the authenticated user
+        const paymentWithUser = {
+          ...paymentData,
+          postedBy: req.user?.id,
+          paymentDate: new Date(),
+          status: 'pending' as const
+        };
+        
+        const payment = await storage.createPayment(paymentWithUser);
+        
+        res.status(201).json({ payment });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return res.status(400).json({ error: "Validation error", details: error.errors });
+        }
+        console.error("Create payment error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update payment
+  app.put("/api/payments/:id", 
+    authenticate, 
+    authorize("billing.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        
+        const payment = await storage.updatePayment(id, updateData);
+        res.json({ payment });
+      } catch (error) {
+        console.error("Update payment error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+}
+
+// Billing Summary Routes
+export function registerBillingRoutes(app: Express) {
+  // Get billing summary by property
+  app.get("/api/properties/:propertyId/billing/summary", 
+    authenticate, 
+    authorize("billing.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { propertyId } = req.params;
+        
+        // Get billing summary data from various sources
+        const properties = await storage.getProperties();
+        const currentProperty = properties.find(p => p.id === propertyId);
+        
+        if (!currentProperty) {
+          return res.status(404).json({ error: "Property not found" });
+        }
+
+        // TODO: Implement actual billing summary calculations
+        // For now, return mock data structure
+        const summary = {
+          totalRevenue: 0,
+          totalOutstanding: 0,
+          totalRefunds: 0,
+          totalCharges: 0,
+          totalPayments: 0,
+          openFolios: 0
+        };
+        
+        res.json({ summary });
+      } catch (error) {
+        console.error("Get billing summary error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+}
+
 // Register all HMS routes
 export function registerHMSRoutes(app: Express) {
   registerAuthRoutes(app);
@@ -969,6 +1442,10 @@ export function registerHMSRoutes(app: Express) {
   registerRoomRoutes(app);
   registerGuestRoutes(app);
   registerReservationRoutes(app);
+  registerFolioRoutes(app);
+  registerChargeRoutes(app);
+  registerPaymentRoutes(app);
+  registerBillingRoutes(app);
   registerServiceRequestRoutes(app);
   registerHousekeepingRoutes(app);
 }
