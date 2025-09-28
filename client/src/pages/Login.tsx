@@ -101,7 +101,7 @@ export default function Login() {
               <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                 <p><strong>Demo Credentials:</strong></p>
                 <p>• Admin: admin / admin123</p>
-                <p>• Manager: manager / manager123</p>
+                <p>• Manager: manager / password123</p>
                 <p>• Front Desk: frontdesk / frontdesk123</p>
               </div>
             </CardContent>

@@ -2147,6 +2147,139 @@ export function registerFinancialReportingRoutes(app: Express) {
     }
   );
 
+  // Frontend-Expected Financial Reports Endpoints
+  
+  // Overview endpoint for frontend
+  app.get("/api/reports/financial/overview",
+    authenticate,
+    authorize("reports.view.financial"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate: from, toDate: to } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        // Get financial overview data
+        const overview = await storage.getFolioSummaryReport(propertyId, from, to);
+        
+        res.json({
+          totalRevenue: overview.totalRevenue || 0,
+          totalExpenses: overview.totalExpenses || 0,
+          netProfit: (overview.totalRevenue || 0) - (overview.totalExpenses || 0)
+        });
+      } catch (error) {
+        console.error("Get financial overview error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  // Revenue details endpoint for frontend
+  app.get("/api/reports/financial/revenue-details", 
+    authenticate,
+    authorize("reports.view.financial"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate: from, toDate: to } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        const report = await storage.getChargesAnalysisReport(propertyId, from, to);
+        const revenueCharges = report.filter(charge => parseFloat(charge.amount) > 0);
+        
+        res.json(revenueCharges);
+      } catch (error) {
+        console.error("Get revenue details error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  // Expense details endpoint for frontend
+  app.get("/api/reports/financial/expense-details",
+    authenticate,
+    authorize("reports.view.financial"), 
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate: from, toDate: to } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        const report = await storage.getChargesAnalysisReport(propertyId, from, to);
+        const expenseCharges = report.filter(charge => parseFloat(charge.amount) < 0);
+        
+        res.json(expenseCharges);
+      } catch (error) {
+        console.error("Get expense details error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+  
+  // Payment history endpoint for frontend
+  app.get("/api/reports/financial/payment-history",
+    authenticate,
+    authorize("reports.view.financial"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate: from, toDate: to } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        const report = await storage.getPaymentAnalysisReport(propertyId, from, to);
+        
+        res.json(report);
+      } catch (error) {
+        console.error("Get payment history error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
   // Financial Summary Dashboard
   app.get("/api/financial-reports/financial-dashboard",
     authenticate,

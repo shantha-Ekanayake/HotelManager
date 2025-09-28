@@ -10,53 +10,26 @@ interface User {
   email?: string;
 }
 
-// Add token to API requests
-const apiRequestWithAuth = async (url: string, options: RequestInit = {}) => {
-  const token = localStorage.getItem("hms_token");
-  
-  const headers = {
-    ...options.headers,
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
-
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-
-  if (response.status === 401) {
-    // Token is invalid or expired, remove it
-    localStorage.removeItem("hms_token");
-    throw new Error("401: Unauthorized");
-  }
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`${response.status}: ${error}`);
-  }
-
-  return response.json();
-};
-
 export function useAuth() {
   const token = localStorage.getItem("hms_token");
 
-  const { data: user, isLoading, error } = useQuery({
-    queryKey: ["/api/auth/me"],
-    queryFn: () => apiRequestWithAuth("/api/auth/me"),
+  const { data: authData, isLoading, error } = useQuery({
+    queryKey: ["/api", "auth", "me"],
     retry: false,
     enabled: !!token, // Only run query if token exists
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    select: (data) => data?.user, // Extract user from { user: ... } response
   });
 
   const logout = () => {
     localStorage.removeItem("hms_token");
-    window.location.href = "/";
+    window.location.reload();
   };
 
   return {
-    user: user as User | undefined,
+    user: authData as User | undefined,
     isLoading: isLoading && !!token, // Only show loading if we have a token
-    isAuthenticated: !!user && !!token,
+    isAuthenticated: !!authData && !!token,
     error,
     logout,
   };
