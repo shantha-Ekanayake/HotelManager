@@ -212,6 +212,40 @@ export function registerPropertyRoutes(app: Express) {
       }
     }
   );
+
+  // Get guests by property
+  app.get("/api/properties/:id/guests", 
+    authenticate, 
+    authorize("guests.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const guests = await storage.getGuestsByProperty(id);
+        res.json({ guests });
+      } catch (error) {
+        console.error("Get guests by property error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get VIP guests by property
+  app.get("/api/properties/:id/guests/vip", 
+    authenticate, 
+    authorize("guests.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const vipGuests = await storage.getVIPGuests(id);
+        res.json({ vipGuests });
+      } catch (error) {
+        console.error("Get VIP guests by property error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
 }
 
 // Room Management Routes
@@ -398,6 +432,65 @@ export function registerGuestRoutes(app: Express) {
         res.json({ guest });
       } catch (error) {
         console.error("Update guest error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get guest profile with CRM data
+  app.get("/api/guests/:id/profile", 
+    authenticate, 
+    authorize("guests.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const profile = await storage.getGuestProfile(id);
+        
+        if (!profile) {
+          return res.status(404).json({ error: "Guest not found" });
+        }
+        
+        res.json({ profile });
+      } catch (error) {
+        console.error("Get guest profile error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get guest stay history
+  app.get("/api/guests/:id/history", 
+    authenticate, 
+    authorize("guests.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const stayHistory = await storage.getGuestStayHistory(id);
+        res.json({ stayHistory });
+      } catch (error) {
+        console.error("Get guest stay history error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update guest preferences
+  app.put("/api/guests/:id/preferences", 
+    authenticate, 
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { preferences } = req.body;
+        
+        if (!preferences || typeof preferences !== 'object') {
+          return res.status(400).json({ error: "Valid preferences object required" });
+        }
+        
+        const guest = await storage.updateGuestPreferences(id, preferences);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest preferences error:", error);
         res.status(500).json({ error: "Internal server error" });
       }
     }
@@ -607,7 +700,7 @@ export function registerReservationRoutes(app: Express) {
             return res.status(404).json({ error: "No available rates found" });
           }
           
-          totalAmount = bestRate.totalAmount;
+          totalAmount = bestRate.totalAmount.toString();
         }
         
         // Validate rate plan length-of-stay restrictions

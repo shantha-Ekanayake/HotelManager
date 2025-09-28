@@ -76,6 +76,19 @@ export interface IHMSStorage {
   createGuest(guest: InsertGuest): Promise<Guest>;
   updateGuest(id: string, guest: Partial<InsertGuest>): Promise<Guest>;
   
+  // Guest CRM Features
+  getGuestStayHistory(guestId: string): Promise<Reservation[]>;
+  getGuestsByProperty(propertyId: string): Promise<Guest[]>;
+  getVIPGuests(propertyId: string): Promise<Guest[]>;
+  updateGuestPreferences(guestId: string, preferences: Record<string, any>): Promise<Guest>;
+  getGuestProfile(guestId: string): Promise<{
+    guest: Guest;
+    stayHistory: Reservation[];
+    totalStays: number;
+    totalRevenue: number;
+    lastStayDate?: Date;
+  } | undefined>;
+  
   // Rate Plan Management
   getRatePlan(id: string): Promise<RatePlan | undefined>;
   getRatePlansByProperty(propertyId: string): Promise<RatePlan[]>;
@@ -288,14 +301,22 @@ export class DatabaseStorage implements IHMSStorage {
   }
 
   async searchGuests(query: string): Promise<Guest[]> {
-    // Simple search implementation - can be enhanced with full-text search
+    // Enhanced search across multiple fields for CRM
+    const searchTerm = `%${query.toLowerCase()}%`;
+    
     return await db.select().from(guests)
       .where(
-        // Simple OR conditions for basic search
-        // In production, you'd want proper full-text search
-        eq(guests.firstName, query)
+        or(
+          sql`LOWER(${guests.firstName}) LIKE ${searchTerm}`,
+          sql`LOWER(${guests.lastName}) LIKE ${searchTerm}`,
+          sql`LOWER(${guests.email}) LIKE ${searchTerm}`,
+          sql`${guests.phone} LIKE ${searchTerm}`,
+          sql`LOWER(${guests.idNumber}) LIKE ${searchTerm}`,
+          sql`LOWER(CONCAT(${guests.firstName}, ' ', ${guests.lastName})) LIKE ${searchTerm}`
+        )
       )
-      .limit(10);
+      .orderBy(desc(guests.updatedAt))
+      .limit(20);
   }
 
   async createGuest(guest: InsertGuest): Promise<Guest> {
@@ -309,6 +330,116 @@ export class DatabaseStorage implements IHMSStorage {
       updatedAt: new Date()
     }).where(eq(guests.id, id)).returning();
     return result[0];
+  }
+
+  // Guest CRM Features Implementation
+  async getGuestStayHistory(guestId: string): Promise<Reservation[]> {
+    return await db.select().from(reservations)
+      .where(eq(reservations.guestId, guestId))
+      .orderBy(desc(reservations.arrivalDate));
+  }
+
+  async getGuestsByProperty(propertyId: string): Promise<Guest[]> {
+    // Get guests who have reservations at this property
+    const guestsWithReservations = await db.selectDistinct({ 
+      id: guests.id,
+      firstName: guests.firstName,
+      lastName: guests.lastName,
+      email: guests.email,
+      phone: guests.phone,
+      address: guests.address,
+      city: guests.city,
+      state: guests.state,
+      country: guests.country,
+      postalCode: guests.postalCode,
+      dateOfBirth: guests.dateOfBirth,
+      idType: guests.idType,
+      idNumber: guests.idNumber,
+      nationality: guests.nationality,
+      preferences: guests.preferences,
+      vipStatus: guests.vipStatus,
+      notes: guests.notes,
+      createdAt: guests.createdAt,
+      updatedAt: guests.updatedAt
+    })
+    .from(guests)
+    .innerJoin(reservations, eq(reservations.guestId, guests.id))
+    .where(eq(reservations.propertyId, propertyId))
+    .orderBy(desc(guests.createdAt));
+    
+    return guestsWithReservations;
+  }
+
+  async getVIPGuests(propertyId: string): Promise<Guest[]> {
+    // Get VIP guests who have reservations at this property
+    const vipGuests = await db.selectDistinct({ 
+      id: guests.id,
+      firstName: guests.firstName,
+      lastName: guests.lastName,
+      email: guests.email,
+      phone: guests.phone,
+      address: guests.address,
+      city: guests.city,
+      state: guests.state,
+      country: guests.country,
+      postalCode: guests.postalCode,
+      dateOfBirth: guests.dateOfBirth,
+      idType: guests.idType,
+      idNumber: guests.idNumber,
+      nationality: guests.nationality,
+      preferences: guests.preferences,
+      vipStatus: guests.vipStatus,
+      notes: guests.notes,
+      createdAt: guests.createdAt,
+      updatedAt: guests.updatedAt
+    })
+    .from(guests)
+    .innerJoin(reservations, eq(reservations.guestId, guests.id))
+    .where(and(
+      eq(reservations.propertyId, propertyId),
+      eq(guests.vipStatus, true)
+    ))
+    .orderBy(desc(guests.createdAt));
+    
+    return vipGuests;
+  }
+
+  async updateGuestPreferences(guestId: string, preferences: Record<string, any>): Promise<Guest> {
+    const result = await db.update(guests).set({
+      preferences,
+      updatedAt: new Date()
+    }).where(eq(guests.id, guestId)).returning();
+    return result[0];
+  }
+
+  async getGuestProfile(guestId: string): Promise<{
+    guest: Guest;
+    stayHistory: Reservation[];
+    totalStays: number;
+    totalRevenue: number;
+    lastStayDate?: Date;
+  } | undefined> {
+    // Get guest information
+    const guest = await this.getGuest(guestId);
+    if (!guest) return undefined;
+
+    // Get stay history
+    const stayHistory = await this.getGuestStayHistory(guestId);
+    
+    // Calculate statistics
+    const totalStays = stayHistory.length;
+    const totalRevenue = stayHistory.reduce((sum, reservation) => 
+      sum + parseFloat(reservation.totalAmount.toString()), 0
+    );
+    const lastStayDate = stayHistory.length > 0 ? stayHistory[0].arrivalDate : undefined;
+
+    return {
+      guest,
+      stayHistory,
+      totalStays,
+      totalRevenue,
+      lastStayDate
+    };
   }
 
   // Rate Plan Management
@@ -649,6 +780,7 @@ export class DatabaseStorage implements IHMSStorage {
       }
       
       const availableRooms = minAvailableRooms;
+      const occupiedRooms = totalRooms - availableRooms;
 
       // Check for daily rate restrictions
       const restrictions: any[] = [];
@@ -806,7 +938,7 @@ export class DatabaseStorage implements IHMSStorage {
   } | null> {
     try {
       // Get active rate plans for this property that satisfy length of stay restrictions
-      const ratePlans = await db.select()
+      const availableRatePlans = await db.select()
         .from(ratePlans)
         .where(and(
           eq(ratePlans.propertyId, propertyId),
@@ -824,7 +956,7 @@ export class DatabaseStorage implements IHMSStorage {
       let bestOffer: any = null;
       let lowestTotal = Infinity;
 
-      for (const ratePlan of ratePlans) {
+      for (const ratePlan of availableRatePlans) {
         // Get daily rates for this rate plan and date range
         const dailyRatesForPlan = await db.select()
           .from(dailyRates)
@@ -973,7 +1105,7 @@ export class DatabaseStorage implements IHMSStorage {
             return {
               success: false,
               error: "Selected dates have booking restrictions",
-              availability: { available: false, restrictions: restrictiveRates }
+              availability: { available: false, availableRooms: 0 }
             };
           }
         }

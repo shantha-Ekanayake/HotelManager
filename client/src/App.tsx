@@ -11,6 +11,7 @@ import Dashboard from "@/pages/Dashboard";
 import FrontDesk from "@/pages/FrontDesk";
 import Reservations from "@/pages/Reservations";
 import Rooms from "@/pages/Rooms";
+import Guests from "@/pages/Guests";
 import NotFound from "@/pages/NotFound";
 
 function Router() {
@@ -20,7 +21,7 @@ function Router() {
       <Route path="/front-desk" component={FrontDesk} />
       <Route path="/reservations" component={Reservations} />
       <Route path="/rooms" component={Rooms} />
-      <Route path="/guests" component={() => <div className="p-6"><h1 className="text-2xl font-bold">Guests - Coming Soon</h1></div>} />
+      <Route path="/guests" component={Guests} />
       <Route path="/housekeeping" component={() => <div className="p-6"><h1 className="text-2xl font-bold">Housekeeping - Coming Soon</h1></div>} />
       <Route path="/billing" component={() => <div className="p-6"><h1 className="text-2xl font-bold">Billing - Coming Soon</h1></div>} />
       <Route path="/reports" component={() => <div className="p-6"><h1 className="text-2xl font-bold">Reports - Coming Soon</h1></div>} />
