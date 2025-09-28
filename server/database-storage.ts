@@ -1845,6 +1845,497 @@ export class DatabaseStorage implements IHMSStorage {
       };
     }
   }
+
+  // =====================================
+  // FINANCIAL REPORTING METHODS
+  // =====================================
+
+  // Get Folio Summary Report
+  async getFolioSummaryReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalFolios: number;
+    openFolios: number;
+    closedFolios: number;
+    totalCharges: number;
+    totalPayments: number;
+    outstandingBalance: number;
+    avgFolioValue: number;
+    foliosByStatus: Record<string, number>;
+    paymentMethodBreakdown: Record<string, number>;
+  }> {
+    // Get folio statistics
+    const folioStats = await db.select({
+      totalFolios: sql<number>`COUNT(*)`,
+      openFolios: sql<number>`SUM(CASE WHEN ${folios.status} = 'open' THEN 1 ELSE 0 END)`,
+      closedFolios: sql<number>`SUM(CASE WHEN ${folios.status} = 'closed' THEN 1 ELSE 0 END)`,
+      totalCharges: sql<number>`COALESCE(SUM(CAST(${folios.totalCharges} AS DECIMAL)), 0)`,
+      totalPayments: sql<number>`COALESCE(SUM(CAST(${folios.totalPayments} AS DECIMAL)), 0)`,
+      outstandingBalance: sql<number>`COALESCE(SUM(CAST(${folios.balance} AS DECIMAL)), 0)`,
+      avgFolioValue: sql<number>`COALESCE(AVG(CAST(${folios.totalCharges} AS DECIMAL)), 0)`
+    })
+    .from(folios)
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      gte(folios.createdAt, fromDate),
+      lte(folios.createdAt, toDate)
+    ));
+
+    // Get folios by status
+    const statusBreakdown = await db.select({
+      status: folios.status,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(folios)
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      gte(folios.createdAt, fromDate),
+      lte(folios.createdAt, toDate)
+    ))
+    .groupBy(folios.status);
+
+    // Get payment method breakdown
+    const paymentBreakdown = await db.select({
+      paymentMethod: payments.paymentMethod,
+      totalAmount: sql<number>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(payments.status, 'completed'),
+      gte(payments.createdAt, fromDate),
+      lte(payments.createdAt, toDate)
+    ))
+    .groupBy(payments.paymentMethod);
+
+    const foliosByStatus: Record<string, number> = {};
+    statusBreakdown.forEach(stat => {
+      foliosByStatus[stat.status] = Number(stat.count);
+    });
+
+    const paymentMethodBreakdown: Record<string, number> = {};
+    paymentBreakdown.forEach(stat => {
+      paymentMethodBreakdown[stat.paymentMethod] = Number(stat.totalAmount);
+    });
+
+    const data = folioStats[0];
+    return {
+      totalFolios: Number(data?.totalFolios || 0),
+      openFolios: Number(data?.openFolios || 0),
+      closedFolios: Number(data?.closedFolios || 0),
+      totalCharges: Number(data?.totalCharges || 0),
+      totalPayments: Number(data?.totalPayments || 0),
+      outstandingBalance: Number(data?.outstandingBalance || 0),
+      avgFolioValue: Number(data?.avgFolioValue || 0),
+      foliosByStatus,
+      paymentMethodBreakdown
+    };
+  }
+
+  // Get Charges Analysis Report
+  async getChargesAnalysisReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalCharges: number;
+    totalTaxes: number;
+    chargesByCode: Record<string, { amount: number; count: number; description: string }>;
+    dailyChargesTrend: { date: string; amount: number; count: number }[];
+    voidedCharges: { amount: number; count: number; reasons: Record<string, number> };
+  }> {
+    // Get total charges and taxes
+    const chargeSummary = await db.select({
+      totalCharges: sql<number>`COALESCE(SUM(CAST(${charges.totalAmount} AS DECIMAL)), 0)`,
+      totalTaxes: sql<number>`COALESCE(SUM(CAST(${charges.taxAmount} AS DECIMAL)), 0)`
+    })
+    .from(charges)
+    .innerJoin(folios, eq(charges.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(charges.isVoided, false),
+      gte(charges.postingDate, fromDate),
+      lte(charges.postingDate, toDate)
+    ));
+
+    // Get charges by code
+    const chargesByCodeData = await db.select({
+      chargeCode: charges.chargeCode,
+      description: charges.description,
+      totalAmount: sql<number>`COALESCE(SUM(CAST(${charges.totalAmount} AS DECIMAL)), 0)`,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(charges)
+    .innerJoin(folios, eq(charges.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(charges.isVoided, false),
+      gte(charges.postingDate, fromDate),
+      lte(charges.postingDate, toDate)
+    ))
+    .groupBy(charges.chargeCode, charges.description)
+    .orderBy(desc(sql`SUM(CAST(${charges.totalAmount} AS DECIMAL))`));
+
+    // Get daily charges trend
+    const dailyTrend = await db.select({
+      date: sql<string>`DATE(${charges.postingDate})`,
+      amount: sql<number>`COALESCE(SUM(CAST(${charges.totalAmount} AS DECIMAL)), 0)`,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(charges)
+    .innerJoin(folios, eq(charges.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(charges.isVoided, false),
+      gte(charges.postingDate, fromDate),
+      lte(charges.postingDate, toDate)
+    ))
+    .groupBy(sql`DATE(${charges.postingDate})`)
+    .orderBy(sql`DATE(${charges.postingDate})`);
+
+    // Get voided charges analysis
+    const voidedChargesData = await db.select({
+      totalVoidedAmount: sql<number>`COALESCE(SUM(CAST(${charges.totalAmount} AS DECIMAL)), 0)`,
+      voidedCount: sql<number>`COUNT(*)`
+    })
+    .from(charges)
+    .innerJoin(folios, eq(charges.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(charges.isVoided, true),
+      gte(charges.postingDate, fromDate),
+      lte(charges.postingDate, toDate)
+    ));
+
+    // Get void reasons breakdown
+    const voidReasons = await db.select({
+      voidReason: charges.voidReason,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(charges)
+    .innerJoin(folios, eq(charges.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(charges.isVoided, true),
+      isNotNull(charges.voidReason),
+      gte(charges.postingDate, fromDate),
+      lte(charges.postingDate, toDate)
+    ))
+    .groupBy(charges.voidReason);
+
+    const chargesByCode: Record<string, { amount: number; count: number; description: string }> = {};
+    chargesByCodeData.forEach(charge => {
+      chargesByCode[charge.chargeCode] = {
+        amount: Number(charge.totalAmount),
+        count: Number(charge.count),
+        description: charge.description
+      };
+    });
+
+    const voidReasonMap: Record<string, number> = {};
+    voidReasons.forEach(reason => {
+      if (reason.voidReason) {
+        voidReasonMap[reason.voidReason] = Number(reason.count);
+      }
+    });
+
+    const voidedData = voidedChargesData[0];
+    const summaryData = chargeSummary[0];
+
+    return {
+      totalCharges: Number(summaryData?.totalCharges || 0),
+      totalTaxes: Number(summaryData?.totalTaxes || 0),
+      chargesByCode,
+      dailyChargesTrend: dailyTrend.map(trend => ({
+        date: trend.date,
+        amount: Number(trend.amount),
+        count: Number(trend.count)
+      })),
+      voidedCharges: {
+        amount: Number(voidedData?.totalVoidedAmount || 0),
+        count: Number(voidedData?.voidedCount || 0),
+        reasons: voidReasonMap
+      }
+    };
+  }
+
+  // Get Payment Analysis Report
+  async getPaymentAnalysisReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalPayments: number;
+    paymentsByMethod: Record<string, { amount: number; count: number; avgAmount: number }>;
+    paymentsByStatus: Record<string, number>;
+    refundsAnalysis: { totalRefunds: number; refundCount: number; topReasons: Record<string, number> };
+    dailyPaymentsTrend: { date: string; amount: number; count: number }[];
+  }> {
+    // Get total payments
+    const paymentSummary = await db.select({
+      totalPayments: sql<number>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(payments.status, 'completed'),
+      gte(payments.paymentDate, fromDate),
+      lte(payments.paymentDate, toDate)
+    ));
+
+    // Get payments by method
+    const paymentsByMethodData = await db.select({
+      paymentMethod: payments.paymentMethod,
+      totalAmount: sql<number>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`,
+      count: sql<number>`COUNT(*)`,
+      avgAmount: sql<number>`COALESCE(AVG(CAST(${payments.amount} AS DECIMAL)), 0)`
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(payments.status, 'completed'),
+      gte(payments.paymentDate, fromDate),
+      lte(payments.paymentDate, toDate)
+    ))
+    .groupBy(payments.paymentMethod)
+    .orderBy(desc(sql`SUM(CAST(${payments.amount} AS DECIMAL))`));
+
+    // Get payments by status
+    const paymentsByStatusData = await db.select({
+      status: payments.status,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      gte(payments.paymentDate, fromDate),
+      lte(payments.paymentDate, toDate)
+    ))
+    .groupBy(payments.status);
+
+    // Get refunds analysis
+    const refundsData = await db.select({
+      totalRefunds: sql<number>`COALESCE(SUM(CAST(${payments.refundAmount} AS DECIMAL)), 0)`,
+      refundCount: sql<number>`COUNT(*)`
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(payments.status, 'refunded'),
+      isNotNull(payments.refundAmount),
+      gte(payments.paymentDate, fromDate),
+      lte(payments.paymentDate, toDate)
+    ));
+
+    // Get refund reasons
+    const refundReasons = await db.select({
+      refundReason: payments.refundReason,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(payments.status, 'refunded'),
+      isNotNull(payments.refundReason),
+      gte(payments.paymentDate, fromDate),
+      lte(payments.paymentDate, toDate)
+    ))
+    .groupBy(payments.refundReason);
+
+    // Get daily payments trend
+    const dailyTrend = await db.select({
+      date: sql<string>`DATE(${payments.paymentDate})`,
+      amount: sql<number>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(payments.status, 'completed'),
+      gte(payments.paymentDate, fromDate),
+      lte(payments.paymentDate, toDate)
+    ))
+    .groupBy(sql`DATE(${payments.paymentDate})`)
+    .orderBy(sql`DATE(${payments.paymentDate})`);
+
+    const paymentsByMethod: Record<string, { amount: number; count: number; avgAmount: number }> = {};
+    paymentsByMethodData.forEach(payment => {
+      paymentsByMethod[payment.paymentMethod] = {
+        amount: Number(payment.totalAmount),
+        count: Number(payment.count),
+        avgAmount: Number(payment.avgAmount)
+      };
+    });
+
+    const paymentsByStatus: Record<string, number> = {};
+    paymentsByStatusData.forEach(status => {
+      paymentsByStatus[status.status] = Number(status.count);
+    });
+
+    const refundReasonMap: Record<string, number> = {};
+    refundReasons.forEach(reason => {
+      if (reason.refundReason) {
+        refundReasonMap[reason.refundReason] = Number(reason.count);
+      }
+    });
+
+    const refundsAnalysis = refundsData[0];
+    const summaryData = paymentSummary[0];
+
+    return {
+      totalPayments: Number(summaryData?.totalPayments || 0),
+      paymentsByMethod,
+      paymentsByStatus,
+      refundsAnalysis: {
+        totalRefunds: Number(refundsAnalysis?.totalRefunds || 0),
+        refundCount: Number(refundsAnalysis?.refundCount || 0),
+        topReasons: refundReasonMap
+      },
+      dailyPaymentsTrend: dailyTrend.map(trend => ({
+        date: trend.date,
+        amount: Number(trend.amount),
+        count: Number(trend.count)
+      }))
+    };
+  }
+
+  // Get Accounting Export Data
+  async getAccountingExportData(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    folioCharges: {
+      folioNumber: string;
+      guestName: string;
+      chargeDate: string;
+      chargeCode: string;
+      description: string;
+      amount: number;
+      taxAmount: number;
+      totalAmount: number;
+    }[];
+    paymentSummary: {
+      folioNumber: string;
+      guestName: string;
+      paymentDate: string;
+      paymentMethod: string;
+      amount: number;
+      status: string;
+      transactionId?: string;
+    }[];
+    dailySummary: {
+      date: string;
+      totalRevenue: number;
+      totalCharges: number;
+      totalPayments: number;
+      totalTax: number;
+    }[];
+  }> {
+    // Get detailed charges for export
+    const folioCharges = await db.select({
+      folioNumber: folios.folioNumber,
+      guestName: sql<string>`COALESCE(${guests.firstName} || ' ' || ${guests.lastName}, 'Unknown')`,
+      chargeDate: sql<string>`${charges.chargeDate}::text`,
+      chargeCode: charges.chargeCode,
+      description: charges.description,
+      amount: charges.amount,
+      taxAmount: charges.taxAmount,
+      totalAmount: charges.totalAmount
+    })
+    .from(charges)
+    .innerJoin(folios, eq(charges.folioId, folios.id))
+    .innerJoin(guests, eq(folios.guestId, guests.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(charges.isVoided, false),
+      gte(charges.postingDate, fromDate),
+      lte(charges.postingDate, toDate)
+    ))
+    .orderBy(charges.postingDate, folios.folioNumber);
+
+    // Get payment summary for export
+    const paymentSummary = await db.select({
+      folioNumber: folios.folioNumber,
+      guestName: sql<string>`COALESCE(${guests.firstName} || ' ' || ${guests.lastName}, 'Unknown')`,
+      paymentDate: sql<string>`${payments.paymentDate}::text`,
+      paymentMethod: payments.paymentMethod,
+      amount: payments.amount,
+      status: payments.status,
+      transactionId: payments.transactionId
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .innerJoin(guests, eq(folios.guestId, guests.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      gte(payments.paymentDate, fromDate),
+      lte(payments.paymentDate, toDate)
+    ))
+    .orderBy(payments.paymentDate, folios.folioNumber);
+
+    // Get daily summary for export
+    const dailySummary = await db.select({
+      date: sql<string>`DATE(${charges.postingDate})`,
+      totalRevenue: sql<number>`COALESCE(SUM(CAST(${charges.amount} AS DECIMAL)), 0)`,
+      totalCharges: sql<number>`COALESCE(SUM(CAST(${charges.totalAmount} AS DECIMAL)), 0)`,
+      totalTax: sql<number>`COALESCE(SUM(CAST(${charges.taxAmount} AS DECIMAL)), 0)`
+    })
+    .from(charges)
+    .innerJoin(folios, eq(charges.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(charges.isVoided, false),
+      gte(charges.postingDate, fromDate),
+      lte(charges.postingDate, toDate)
+    ))
+    .groupBy(sql`DATE(${charges.postingDate})`)
+    .orderBy(sql`DATE(${charges.postingDate})`);
+
+    // Get daily payments total
+    const dailyPayments = await db.select({
+      date: sql<string>`DATE(${payments.paymentDate})`,
+      totalPayments: sql<number>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`
+    })
+    .from(payments)
+    .innerJoin(folios, eq(payments.folioId, folios.id))
+    .where(and(
+      eq(folios.propertyId, propertyId),
+      eq(payments.status, 'completed'),
+      gte(payments.paymentDate, fromDate),
+      lte(payments.paymentDate, toDate)
+    ))
+    .groupBy(sql`DATE(${payments.paymentDate})`)
+    .orderBy(sql`DATE(${payments.paymentDate})`);
+
+    // Merge daily summaries
+    const dailySummaryWithPayments = dailySummary.map(day => {
+      const matchingPayment = dailyPayments.find(p => p.date === day.date);
+      return {
+        date: day.date,
+        totalRevenue: Number(day.totalRevenue),
+        totalCharges: Number(day.totalCharges),
+        totalPayments: Number(matchingPayment?.totalPayments || 0),
+        totalTax: Number(day.totalTax)
+      };
+    });
+
+    return {
+      folioCharges: folioCharges.map(charge => ({
+        folioNumber: charge.folioNumber,
+        guestName: charge.guestName,
+        chargeDate: charge.chargeDate,
+        chargeCode: charge.chargeCode,
+        description: charge.description,
+        amount: Number(charge.amount),
+        taxAmount: Number(charge.taxAmount),
+        totalAmount: Number(charge.totalAmount)
+      })),
+      paymentSummary: paymentSummary.map(payment => ({
+        folioNumber: payment.folioNumber,
+        guestName: payment.guestName,
+        paymentDate: payment.paymentDate,
+        paymentMethod: payment.paymentMethod,
+        amount: Number(payment.amount),
+        status: payment.status,
+        transactionId: payment.transactionId || undefined
+      })),
+      dailySummary: dailySummaryWithPayments
+    };
+  }
 }
 
 export const hmsStorage = new DatabaseStorage();

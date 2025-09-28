@@ -33,6 +33,40 @@ import {
   type Reservation
 } from "@shared/schema";
 
+// Date validation schema for financial reports
+const DateRangeSchema = z.object({
+  fromDate: z.string().refine((date) => !isNaN(Date.parse(date)), {
+    message: "Invalid fromDate format"
+  }),
+  toDate: z.string().refine((date) => !isNaN(Date.parse(date)), {
+    message: "Invalid toDate format"
+  })
+});
+
+// Utility to normalize dates to UTC start/end of day to avoid timezone issues
+function normalizeDateRange(fromDateStr: string, toDateStr: string) {
+  const fromDate = new Date(fromDateStr);
+  const toDate = new Date(toDateStr);
+  
+  // Normalize to UTC start of day for fromDate
+  const normalizedFromDate = new Date(Date.UTC(
+    fromDate.getFullYear(),
+    fromDate.getMonth(),
+    fromDate.getDate(),
+    0, 0, 0, 0
+  ));
+  
+  // Normalize to UTC end of day for toDate  
+  const normalizedToDate = new Date(Date.UTC(
+    toDate.getFullYear(),
+    toDate.getMonth(),
+    toDate.getDate(),
+    23, 59, 59, 999
+  ));
+  
+  return { fromDate: normalizedFromDate, toDate: normalizedToDate };
+}
+
 // Authentication Routes
 export function registerAuthRoutes(app: Express) {
   // Login
@@ -1967,6 +2001,201 @@ export function registerReportingRoutes(app: Express) {
   );
 }
 
+// Financial Reports Routes
+export function registerFinancialReportingRoutes(app: Express) {
+  // Folio Summary Report
+  app.get("/api/financial-reports/folio-summary",
+    async (req: Request, res: Response) => {
+      try {
+        // Demo property ID for development
+        const propertyId = 'demo-property-1';
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate, toDate } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        const report = await storage.getFolioSummaryReport(
+          propertyId,
+          fromDate,
+          toDate
+        );
+        
+        res.json({ report });
+      } catch (error) {
+        console.error("Get folio summary report error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Charges Analysis Report
+  app.get("/api/financial-reports/charges-analysis",
+    async (req: Request, res: Response) => {
+      try {
+        // Demo property ID for development
+        const propertyId = 'demo-property-1';
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate, toDate } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        const report = await storage.getChargesAnalysisReport(
+          propertyId,
+          fromDate,
+          toDate
+        );
+        
+        res.json({ report });
+      } catch (error) {
+        console.error("Get charges analysis report error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Payment Analysis Report
+  app.get("/api/financial-reports/payment-analysis",
+    async (req: Request, res: Response) => {
+      try {
+        // Demo property ID for development
+        const propertyId = 'demo-property-1';
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate, toDate } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        const report = await storage.getPaymentAnalysisReport(
+          propertyId,
+          fromDate,
+          toDate
+        );
+        
+        res.json({ report });
+      } catch (error) {
+        console.error("Get payment analysis report error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Accounting Export Data
+  app.get("/api/financial-reports/accounting-export",
+    async (req: Request, res: Response) => {
+      try {
+        // Demo property ID for development
+        const propertyId = 'demo-property-1';
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate, toDate } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        const exportData = await storage.getAccountingExportData(
+          propertyId,
+          fromDate,
+          toDate
+        );
+        
+        res.json({ exportData });
+      } catch (error) {
+        console.error("Get accounting export data error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Financial Summary Dashboard
+  app.get("/api/financial-reports/financial-dashboard",
+    async (req: Request, res: Response) => {
+      try {
+        // Demo property ID for development
+        const propertyId = 'demo-property-1';
+        
+        // Validate date range parameters
+        const dateValidation = DateRangeSchema.safeParse(req.query);
+        if (!dateValidation.success) {
+          return res.status(400).json({ error: "Invalid date parameters", details: dateValidation.error.errors });
+        }
+        
+        const { fromDate: fromDateStr, toDate: toDateStr } = dateValidation.data;
+        const { fromDate: from, toDate: to } = normalizeDateRange(fromDateStr, toDateStr);
+        
+        // Get all financial reports for dashboard
+        const [
+          folioSummary,
+          chargesAnalysis,
+          paymentAnalysis,
+          revenueReport
+        ] = await Promise.all([
+          storage.getFolioSummaryReport(propertyId, from, to),
+          storage.getChargesAnalysisReport(propertyId, from, to),
+          storage.getPaymentAnalysisReport(propertyId, from, to),
+          storage.getRevenueReport(propertyId, from, to)
+        ]);
+        
+        const dashboard = {
+          summary: {
+            totalRevenue: revenueReport.totalRevenue,
+            totalCharges: folioSummary.totalCharges,
+            totalPayments: folioSummary.totalPayments,
+            outstandingBalance: folioSummary.outstandingBalance,
+            avgDailyRate: revenueReport.avgDailyRate,
+            revpar: revenueReport.revpar
+          },
+          folioMetrics: {
+            totalFolios: folioSummary.totalFolios,
+            openFolios: folioSummary.openFolios,
+            closedFolios: folioSummary.closedFolios,
+            avgFolioValue: folioSummary.avgFolioValue
+          },
+          paymentMetrics: {
+            totalPayments: paymentAnalysis.totalPayments,
+            paymentsByMethod: paymentAnalysis.paymentsByMethod,
+            refundsAnalysis: paymentAnalysis.refundsAnalysis
+          },
+          chargeMetrics: {
+            totalCharges: chargesAnalysis.totalCharges,
+            totalTaxes: chargesAnalysis.totalTaxes,
+            voidedCharges: chargesAnalysis.voidedCharges,
+            topChargeTypes: Object.entries(chargesAnalysis.chargesByCode)
+              .sort(([,a], [,b]) => b.amount - a.amount)
+              .slice(0, 5)
+              .map(([code, data]) => ({ code, ...data }))
+          },
+          trends: {
+            dailyCharges: chargesAnalysis.dailyChargesTrend,
+            dailyPayments: paymentAnalysis.dailyPaymentsTrend
+          }
+        };
+        
+        res.json({ dashboard });
+      } catch (error) {
+        console.error("Get financial dashboard error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+}
+
 // Register all HMS routes
 export function registerHMSRoutes(app: Express) {
   registerAuthRoutes(app);
@@ -1982,4 +2211,5 @@ export function registerHMSRoutes(app: Express) {
   registerServiceRequestRoutes(app);
   registerHousekeepingRoutes(app);
   registerReportingRoutes(app);
+  registerFinancialReportingRoutes(app);
 }
