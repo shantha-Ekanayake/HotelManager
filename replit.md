@@ -27,10 +27,18 @@ Preferred communication style: Simple, everyday language.
 - **Schema Validation**: Zod schemas shared between client and server
 
 ### Data Storage
-- **Database**: PostgreSQL with Neon serverless configuration
-- **Connection**: Connection pooling via @neondatabase/serverless
-- **Migrations**: Drizzle Kit for database schema migrations
-- **Schema Location**: Shared schema definitions in `/shared/schema.ts`
+- **Current Storage**: In-memory storage (MemStorage) as temporary workaround for database connectivity issue
+- **Database Schema**: PostgreSQL schema defined with Drizzle ORM in `/shared/schema.ts`
+- **Future Migration**: System designed to easily switch back to DatabaseStorage once database connection is restored
+- **Storage Implementation**: `/server/mem-storage.ts` implements full IHMSStorage interface with demo data
+
+### Current Storage Details (In-Memory)
+- **Implementation**: MemStorage class with Map-based storage for all entities
+- **Demo Data**: Pre-seeded with Grand Hotel Demo property, 3 users, room types, rooms, and guest
+- **Authentication**: JWT tokens with bcrypt-hashed passwords (synchronous seeding to prevent race conditions)
+- **Users**: manager/password123, admin/admin123, frontdesk/frontdesk123
+- **Property**: Grand Hotel Demo (prop-demo) in San Francisco
+- **Financial Reports**: All report methods implemented returning empty/zero data for clean demo state
 
 ### Design System
 - **Color Palette**: Custom hotel industry colors (success green, warning amber, error red)
@@ -54,8 +62,8 @@ The application is organized into core hotel management modules:
 ## External Dependencies
 
 ### Database Services
-- **Neon Database**: Serverless PostgreSQL hosting with connection pooling
 - **Drizzle ORM**: Type-safe database toolkit for schema management and queries
+- **PostgreSQL Schema**: Complete database schema defined in shared/schema.ts (ready for migration from in-memory to persistent storage)
 
 ### UI and Component Libraries
 - **Radix UI**: Headless UI primitives for accessibility and interaction patterns

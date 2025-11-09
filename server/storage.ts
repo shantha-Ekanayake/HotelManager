@@ -1,2 +1,2 @@
-// Legacy storage interface for compatibility - now uses DatabaseStorage
-export { type IHMSStorage as IStorage, hmsStorage as storage } from "./database-storage";
+// Using in-memory storage for demo (database connection issue)
+export { type IHMSStorage as IStorage, memStorage as storage } from "./mem-storage";
