@@ -470,6 +470,9 @@ export const insertReservationSchema = createInsertSchema(reservations).omit({
   checkOutTime: true,
   createdAt: true,
   updatedAt: true
+}).extend({
+  arrivalDate: z.coerce.date(),
+  departureDate: z.coerce.date(),
 });
 
 export const insertFolioSchema = createInsertSchema(folios).omit({

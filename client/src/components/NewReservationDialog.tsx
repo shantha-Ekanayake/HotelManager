@@ -35,6 +35,13 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
   const { toast } = useToast();
   const { user } = useAuth();
   const [showNewGuestForm, setShowNewGuestForm] = useState(false);
+  const [newGuest, setNewGuest] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    idNumber: ""
+  });
 
   const form = useForm<ReservationFormData>({
     resolver: zodResolver(reservationFormSchema),
@@ -97,10 +104,7 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
         createdBy: data.createdBy
       };
       
-      return apiRequest("/api/reservations", {
-        method: "POST",
-        body: JSON.stringify(reservationData),
-      });
+      return apiRequest("POST", "/api/reservations", reservationData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
@@ -122,15 +126,13 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
 
   const createGuestMutation = useMutation({
     mutationFn: async (guestData: any) => {
-      return apiRequest("/api/guests", {
-        method: "POST",
-        body: JSON.stringify(guestData),
-      });
+      return apiRequest("POST", "/api/guests", guestData);
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/guests"] });
       form.setValue("guestId", data.guest.id);
       setShowNewGuestForm(false);
+      setNewGuest({ firstName: "", lastName: "", email: "", phone: "", idNumber: "" });
       toast({
         title: "Success",
         description: "Guest created successfully",
@@ -232,33 +234,67 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => setShowNewGuestForm(false)}
+                        onClick={() => {
+                          setShowNewGuestForm(false);
+                          setNewGuest({ firstName: "", lastName: "", email: "", phone: "", idNumber: "" });
+                        }}
                       >
                         Cancel
                       </Button>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <Input placeholder="First Name" data-testid="input-guest-firstname" id="guest-firstname" />
-                      <Input placeholder="Last Name" data-testid="input-guest-lastname" id="guest-lastname" />
-                      <Input placeholder="Email" data-testid="input-guest-email" id="guest-email" type="email" className="col-span-2" />
-                      <Input placeholder="Phone" data-testid="input-guest-phone" id="guest-phone" />
-                      <Input placeholder="ID Number" data-testid="input-guest-idnumber" id="guest-idnumber" />
+                      <Input 
+                        placeholder="First Name *" 
+                        data-testid="input-guest-firstname"
+                        value={newGuest.firstName}
+                        onChange={(e) => setNewGuest({ ...newGuest, firstName: e.target.value })}
+                      />
+                      <Input 
+                        placeholder="Last Name *" 
+                        data-testid="input-guest-lastname"
+                        value={newGuest.lastName}
+                        onChange={(e) => setNewGuest({ ...newGuest, lastName: e.target.value })}
+                      />
+                      <Input 
+                        placeholder="Email *" 
+                        data-testid="input-guest-email" 
+                        type="email" 
+                        className="col-span-2"
+                        value={newGuest.email}
+                        onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })}
+                      />
+                      <Input 
+                        placeholder="Phone" 
+                        data-testid="input-guest-phone"
+                        value={newGuest.phone}
+                        onChange={(e) => setNewGuest({ ...newGuest, phone: e.target.value })}
+                      />
+                      <Input 
+                        placeholder="ID Number" 
+                        data-testid="input-guest-idnumber"
+                        value={newGuest.idNumber}
+                        onChange={(e) => setNewGuest({ ...newGuest, idNumber: e.target.value })}
+                      />
                     </div>
                     <Button
                       type="button"
                       onClick={() => {
-                        const firstName = (document.getElementById("guest-firstname") as HTMLInputElement)?.value;
-                        const lastName = (document.getElementById("guest-lastname") as HTMLInputElement)?.value;
-                        const email = (document.getElementById("guest-email") as HTMLInputElement)?.value;
-                        const phone = (document.getElementById("guest-phone") as HTMLInputElement)?.value;
-                        const idNumber = (document.getElementById("guest-idnumber") as HTMLInputElement)?.value;
+                        if (!newGuest.firstName || !newGuest.lastName || !newGuest.email) {
+                          toast({
+                            title: "Validation Error",
+                            description: "First Name, Last Name, and Email are required",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
                         
                         createGuestMutation.mutate({
-                          firstName,
-                          lastName,
-                          email,
-                          phone,
-                          idNumber,
+                          propertyId: user?.propertyId || "prop-demo",
+                          firstName: newGuest.firstName,
+                          lastName: newGuest.lastName,
+                          email: newGuest.email,
+                          phone: newGuest.phone || "",
+                          idNumber: newGuest.idNumber || "",
                           idType: "Passport",
                           nationality: "USA",
                         });

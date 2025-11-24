@@ -87,3 +87,61 @@ The application is organized into core hotel management modules:
 ### Session Management
 - **connect-pg-simple**: PostgreSQL session store for Express sessions
 - **Express Session**: Server-side session management
+
+## Recent Implementation: New Reservation Feature
+
+### Authorization System Enhancement (November 2025)
+- **Permission Hierarchy**: Implemented "X.manage" → "X.view" logic in hasPermission()
+  - Users with "guests.manage" automatically have "guests.view" access
+  - Users with "reservations.manage" automatically have "reservations.view" access
+  - Wildcard permissions ("*.manage") imply matching view permissions
+- **Updated Permissions**: hotel_manager role now includes:
+  - "rooms.view" - View room types, availability, and rate plans
+  - "properties.view" - Access property-scoped data and metadata
+- **Security**: Permission hierarchy preserves least privilege while enabling management workflows
+
+### Complete Reservation Creation Feature
+- **Frontend**: NewReservationDialog component with comprehensive form
+  - Guest selection with create-new-guest capability
+  - Room type selection with pricing display
+  - Rate plan selection
+  - Date pickers with automatic nights calculation
+  - Automatic total amount calculation (room rate × nights)
+  - Adults/children inputs
+  - Special requests textarea
+  - Full form validation using Zod schema
+
+- **Backend**: Reservation creation with automatic folio generation
+  - Auto-generates confirmation numbers (format: RES-{timestamp}-{random})
+  - Auto-creates folios with folio numbers (format: FLO-{timestamp}-{random})
+  - Date validation with z.coerce.date() for ISO string handling
+  - Rate plan restrictions validation (min/max length of stay)
+  - Transactional creation prevents race conditions
+
+- **API Endpoints**:
+  - GET /api/guests - Fetch all guests by property
+  - GET /api/properties/:propertyId/room-types - Fetch room types with pricing
+  - GET /api/properties/:propertyId/rate-plans - Fetch available rate plans
+  - POST /api/reservations - Create reservation with validation
+  - POST /api/guests - Create new guest with property association
+
+- **Data Flow**:
+  1. User selects/creates guest
+  2. Selects room type and rate plan
+  3. Picks arrival/departure dates
+  4. System calculates nights and total amount
+  5. User submits reservation
+  6. Backend validates and creates reservation
+  7. System auto-generates confirmation number
+  8. System auto-creates associated folio
+  9. Success notification displayed
+  10. Reservation appears in list
+
+### Implementation Status
+- ✅ Authorization hierarchy working correctly
+- ✅ All API endpoints functional with proper permissions
+- ✅ Guest creation with validation and propertyId association
+- ✅ Date handling (ISO strings coerced to Date objects)
+- ✅ End-to-end reservation flow tested and operational
+- ✅ No 403 authorization or 400 validation errors
+- ✅ Production-ready for UAT (User Acceptance Testing)
