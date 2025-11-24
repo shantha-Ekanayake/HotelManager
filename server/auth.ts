@@ -45,7 +45,7 @@ export const USER_ROLES = {
     level: 7,
     description: "Full property management for assigned property",
     permissions: [
-      "reservations.manage", "guests.manage", "billing.view",
+      "reservations.manage", "guests.manage", "rooms.view", "billing.view",
       "housekeeping.manage", "maintenance.manage", "reports.view.property",
       "reports.view.financial", "rates.view", "users.view.property", "front_desk.manage"
     ]
@@ -192,6 +192,16 @@ export function hasPermission(userRole: UserRole, permission: string): boolean {
     return true;
   }
   
+  // Permission hierarchy: "X.manage" implies "X.view"
+  // If requesting "X.view", check if user has "X.manage"
+  if (permission.endsWith(".view")) {
+    const domain = permission.replace(".view", "");
+    const managePermission = `${domain}.manage`;
+    if (role.permissions.some(p => p === managePermission)) {
+      return true;
+    }
+  }
+  
   // Check for wildcard pattern match (e.g., "*.view" matches "guests.view")
   const wildcardPermissions = role.permissions.filter(p => p.includes("*"));
   for (const wildcard of wildcardPermissions) {
@@ -199,6 +209,17 @@ export function hasPermission(userRole: UserRole, permission: string): boolean {
     const regex = new RegExp(`^${pattern}$`);
     if (regex.test(permission)) {
       return true;
+    }
+    
+    // Wildcard hierarchy: "*.manage" implies all "*.view"
+    if (wildcard.endsWith(".manage") && permission.endsWith(".view")) {
+      const wildcardDomain = wildcard.replace(".manage", "");
+      const permissionDomain = permission.replace(".view", "");
+      const domainPattern = wildcardDomain.replace("*", ".*");
+      const domainRegex = new RegExp(`^${domainPattern}$`);
+      if (domainRegex.test(permissionDomain)) {
+        return true;
+      }
     }
   }
   

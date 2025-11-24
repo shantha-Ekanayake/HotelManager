@@ -474,8 +474,32 @@ class MemStorage implements IHMSStorage {
   }
   async getRoomTypeAvailability(): Promise<any[]> { return []; }
   async calculateBestRate(): Promise<any> { return null; }
-  async createReservationWithValidation(): Promise<any> {
-    return { success: true, error: undefined };
+  async createReservationWithValidation(reservation: InsertReservation, validateAvailability: boolean): Promise<{
+    success: boolean;
+    reservation?: Reservation;
+    error?: string;
+    availability?: any;
+  }> {
+    try {
+      // Create the reservation
+      const newReservation = await this.createReservation(reservation);
+      
+      // Automatically create a folio for the reservation
+      await this.createFolio({
+        reservationId: newReservation.id,
+        guestId: newReservation.guestId,
+        propertyId: newReservation.propertyId,
+        status: "open",
+        totalCharges: "0",
+        totalPayments: "0",
+        balance: "0",
+        notes: `Auto-created for reservation ${newReservation.confirmationNumber}`
+      });
+      
+      return { success: true, reservation: newReservation };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : "Failed to create reservation" };
+    }
   }
   async getReservation(id: string): Promise<Reservation | undefined> {
     return this.reservations.get(id);
@@ -490,9 +514,13 @@ class MemStorage implements IHMSStorage {
   async getArrivalsToday(): Promise<Reservation[]> { return []; }
   async getDeparturesToday(): Promise<Reservation[]> { return []; }
   async createReservation(reservation: InsertReservation): Promise<Reservation> {
+    const confirmationNumber = `RES-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const newReservation: Reservation = {
       id: generateId(),
+      confirmationNumber,
       ...reservation,
+      checkInTime: null,
+      checkOutTime: null,
       createdAt: new Date(),
       updatedAt: new Date()
     } as Reservation;
@@ -529,8 +557,10 @@ class MemStorage implements IHMSStorage {
     return { totalCharges, totalPayments, balance: totalCharges - totalPayments };
   }
   async createFolio(folio: InsertFolio): Promise<Folio> {
+    const folioNumber = `F-${Date.now()}`;
     const newFolio: Folio = {
       id: generateId(),
+      folioNumber,
       ...folio,
       createdAt: new Date(),
       updatedAt: new Date()

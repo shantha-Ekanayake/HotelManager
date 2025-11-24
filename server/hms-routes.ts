@@ -330,6 +330,24 @@ export function registerRoomRoutes(app: Express) {
     }
   );
 
+  // Get rate plans by property
+  app.get("/api/properties/:propertyId/rate-plans", 
+    authenticate, 
+    authorize("rooms.view"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { propertyId } = req.params;
+        const ratePlans = await storage.getRatePlansByProperty(propertyId);
+        
+        res.json({ ratePlans });
+      } catch (error) {
+        console.error("Get rate plans error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
   // Create room type
   app.post("/api/properties/:propertyId/room-types", 
     authenticate, 
@@ -401,6 +419,26 @@ export function registerRoomRoutes(app: Express) {
 
 // Guest Management Routes
 export function registerGuestRoutes(app: Express) {
+  // Get all guests
+  app.get("/api/guests", 
+    authenticate, 
+    authorize("guests.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "Property ID required" });
+        }
+        
+        const guests = await storage.getGuestsByProperty(propertyId);
+        res.json({ guests });
+      } catch (error) {
+        console.error("Get guests error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
   // Search guests
   app.get("/api/guests/search", 
     authenticate, 
