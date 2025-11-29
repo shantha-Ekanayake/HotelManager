@@ -147,3 +147,33 @@ The application is organized into core hotel management modules:
 - ✅ End-to-end reservation flow tested and operational
 - ✅ No 403 authorization or 400 validation errors
 - ✅ Production-ready for UAT (User Acceptance Testing)
+
+## Rooms Module Implementation (November 2025)
+
+### Frontend Features (Rooms.tsx)
+- **Room Grid View**: Responsive grid displaying all rooms with status visualization
+- **Room Status Cards**: Color-coded cards showing room number, type, floor, status
+- **Status Update Dropdown**: Inline dropdown to change room status (clean/dirty/occupied/available/maintenance)
+- **Room Types Tab**: Displays room type configurations with pricing and occupancy
+- **Rate Plans Tab**: Shows rate plan details with cancellation policies
+- **Statistics Dashboard**: Total rooms, occupied, available, clean, dirty, maintenance counts
+- **Search & Filtering**: Filter rooms by status, room type, and room number
+
+### Backend APIs (hms-routes.ts)
+- GET /api/properties/:propertyId/rooms - Fetch all rooms for a property
+- GET /api/properties/:propertyId/room-types - Fetch room types with pricing
+- GET /api/properties/:propertyId/rate-plans - Fetch rate plans with policies
+- GET /api/reservations - Fetch all reservations for enriching room data
+- PATCH /api/rooms/:id/status - Update room status
+- PATCH /api/rooms/:id/block - Block/unblock room
+- PUT /api/rooms/:id - Update room details
+- PUT /api/room-types/:id - Update room type
+- PUT /api/rate-plans/:id - Update rate plan
+
+### Query Pattern
+All queries use the shared `queryFn` from queryClient.ts which automatically:
+- Includes Authorization header from localStorage (hms_token)
+- Handles 401 errors by redirecting to login
+- Throws proper error messages for failed requests
+
+Example: `useQuery({ queryKey: ['/api/properties/prop-demo/rooms'] })`
