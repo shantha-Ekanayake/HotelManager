@@ -910,6 +910,176 @@ export function registerReservationRoutes(app: Express) {
   );
 }
 
+// Front Desk Routes
+function registerFrontDeskRoutes(app: Express) {
+  // Get today's arrivals
+  app.get("/api/front-desk/arrivals-today",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+
+        const arrivals = await storage.getArrivalsToday(propertyId);
+        res.json({ arrivals });
+      } catch (error) {
+        console.error("Get arrivals error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get today's departures
+  app.get("/api/front-desk/departures-today",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+
+        const departures = await storage.getDeparturesToday(propertyId);
+        res.json({ departures });
+      } catch (error) {
+        console.error("Get departures error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get front desk overview stats
+  app.get("/api/front-desk/overview",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+
+        const [arrivals, departures, allReservations, rooms] = await Promise.all([
+          storage.getArrivalsToday(propertyId),
+          storage.getDeparturesToday(propertyId),
+          storage.getReservationsByProperty(propertyId),
+          storage.getRoomsByProperty(propertyId)
+        ]);
+
+        const checkedInToday = arrivals.filter(r => r.status === "checked_in");
+        const checkedOutToday = departures.filter(r => r.status === "checked_out");
+        const currentlyOccupied = allReservations.filter(r => r.status === "checked_in");
+        const totalRooms = rooms.length;
+        const occupancyRate = totalRooms > 0 ? Math.round((currentlyOccupied.length / totalRooms) * 100) : 0;
+
+        const overview = {
+          checkInsScheduled: arrivals.length,
+          checkInsCompleted: checkedInToday.length,
+          checkOutsScheduled: departures.length,
+          checkOutsCompleted: checkedOutToday.length,
+          currentOccupancy: occupancyRate,
+          totalRooms,
+          occupiedRooms: currentlyOccupied.length,
+          availableRooms: totalRooms - currentlyOccupied.length
+        };
+
+        res.json({ overview });
+      } catch (error) {
+        console.error("Get overview error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get available rooms for check-in
+  app.get("/api/front-desk/available-rooms",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+
+        const rooms = await storage.getRoomsByProperty(propertyId);
+        const availableRooms = rooms.filter(room => 
+          room.status === "clean" || room.status === "inspected" || room.status === "available"
+        );
+
+        res.json({ rooms: availableRooms });
+      } catch (error) {
+        console.error("Get available rooms error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get current guests (checked-in reservations)
+  app.get("/api/front-desk/current-guests",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+
+        const reservations = await storage.getReservationsByProperty(propertyId);
+        const currentGuests = reservations.filter(r => r.status === "checked_in");
+
+        res.json({ guests: currentGuests });
+      } catch (error) {
+        console.error("Get current guests error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get reservation with folio for checkout
+  app.get("/api/front-desk/reservation/:id/folio",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+
+        const folio = await storage.getFolioByReservation(id);
+        if (!folio) {
+          return res.status(404).json({ error: "Folio not found" });
+        }
+
+        const [charges, payments] = await Promise.all([
+          storage.getChargesByFolio(folio.id),
+          storage.getPaymentsByFolio(folio.id)
+        ]);
+
+        res.json({ 
+          reservation,
+          folio: {
+            ...folio,
+            charges,
+            payments
+          }
+        });
+      } catch (error) {
+        console.error("Get reservation folio error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+}
+
 // Service Request Routes
 export function registerServiceRequestRoutes(app: Express) {
   // Get service requests by property
@@ -2405,6 +2575,7 @@ export function registerHMSRoutes(app: Express) {
   registerRoomRoutes(app);
   registerGuestRoutes(app);
   registerReservationRoutes(app);
+  registerFrontDeskRoutes(app);
   registerFolioRoutes(app);
   registerChargeRoutes(app);
   registerPaymentRoutes(app);

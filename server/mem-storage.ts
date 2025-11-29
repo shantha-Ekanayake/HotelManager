@@ -510,9 +510,37 @@ class MemStorage implements IHMSStorage {
   async getReservationsByProperty(propertyId: string): Promise<Reservation[]> {
     return Array.from(this.reservations.values()).filter(r => r.propertyId === propertyId);
   }
-  async getReservationsByDateRange(): Promise<Reservation[]> { return []; }
-  async getArrivalsToday(): Promise<Reservation[]> { return []; }
-  async getDeparturesToday(): Promise<Reservation[]> { return []; }
+  async getReservationsByDateRange(propertyId: string, fromDate: Date, toDate: Date): Promise<Reservation[]> {
+    return Array.from(this.reservations.values()).filter(r => 
+      r.propertyId === propertyId &&
+      r.arrivalDate >= fromDate &&
+      r.arrivalDate <= toDate
+    );
+  }
+  
+  async getArrivalsToday(propertyId: string): Promise<Reservation[]> {
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    
+    return Array.from(this.reservations.values()).filter(r =>
+      r.propertyId === propertyId &&
+      r.arrivalDate >= startOfDay &&
+      r.arrivalDate <= endOfDay
+    );
+  }
+  
+  async getDeparturesToday(propertyId: string): Promise<Reservation[]> {
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    
+    return Array.from(this.reservations.values()).filter(r =>
+      r.propertyId === propertyId &&
+      r.departureDate >= startOfDay &&
+      r.departureDate <= endOfDay
+    );
+  }
   async createReservation(reservation: InsertReservation): Promise<Reservation> {
     const confirmationNumber = `RES-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const newReservation: Reservation = {
