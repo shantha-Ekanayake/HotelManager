@@ -29,8 +29,8 @@ export const USER_ROLES = {
     description: "Administrative access to most modules and settings",
     permissions: [
       "users.manage", "properties.manage", "reports.view.all",
-      "reservations.manage", "guests.manage", "billing.manage",
-      "housekeeping.manage", "maintenance.manage", "rates.manage"
+      "reservations.manage", "guests.manage", "rooms.view", "rooms.manage",
+      "billing.manage", "housekeeping.manage", "maintenance.manage", "rates.manage"
     ]
   },
   operations_manager: {
