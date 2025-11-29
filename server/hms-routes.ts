@@ -849,6 +849,27 @@ export function registerReservationRoutes(app: Express) {
     }
   );
 
+  // Get single reservation by ID
+  app.get("/api/reservations/:id",
+    authenticate,
+    authorize("reservations.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const reservation = await storage.getReservation(id);
+        
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+        
+        res.json({ reservation });
+      } catch (error) {
+        console.error("Get reservation error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
   // Check-in
   app.post("/api/reservations/:id/check-in", 
     authenticate, 
@@ -1064,6 +1085,7 @@ function registerFrontDeskRoutes(app: Express) {
           storage.getPaymentsByFolio(folio.id)
         ]);
 
+        // Nest charges and payments inside folio object for frontend compatibility
         res.json({ 
           reservation,
           folio: {

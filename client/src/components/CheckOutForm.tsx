@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,88 +8,131 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CreditCard, Receipt, Clock, DollarSign, Star, MessageSquare } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { CreditCard, Receipt, Clock, Star, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Reservation, Guest, Folio, Charge, Payment } from "@shared/schema";
 
 interface CheckOutFormProps {
-  guestData?: {
-    name: string;
-    roomNumber: string;
-    checkInDate: string;
-    totalNights: number;
-    roomRate: number;
-  };
+  reservationId?: string;
   onCheckOutComplete?: (data: any) => void;
 }
 
-export default function CheckOutForm({ guestData, onCheckOutComplete }: CheckOutFormProps) {
+export default function CheckOutForm({ reservationId, onCheckOutComplete }: CheckOutFormProps) {
   const { toast } = useToast();
-  const [isProcessing, setIsProcessing] = useState(false);
+  
   const [checkOutDetails, setCheckOutDetails] = useState({
     departureTime: new Date().toTimeString().slice(0, 5),
     keyCardsReturned: "2",
-    additionalCharges: "",
-    guestFeedback: "",
-    rating: "5",
     roomCondition: "good",
     damages: "",
-    finalPaymentMethod: "same-as-checkin"
+    guestFeedback: "",
+    rating: "5",
+    additionalNotes: ""
   });
 
-  // TODO: remove mock functionality - replace with real bill calculation
-  const mockBillSummary = {
-    roomCharges: (guestData?.roomRate || 120) * (guestData?.totalNights || 2),
-    taxes: ((guestData?.roomRate || 120) * (guestData?.totalNights || 2)) * 0.12,
-    additionalCharges: 25.50, // minibar, etc.
-    securityDeposit: 100,
-    total: 0
-  };
+  const { data: folioData, isLoading: folioLoading } = useQuery<{
+    reservation: Reservation;
+    folio: Folio & { charges: Charge[]; payments: Payment[] };
+  }>({
+    queryKey: ["/api/front-desk/reservation", reservationId, "folio"],
+    enabled: !!reservationId
+  });
 
-  mockBillSummary.total = mockBillSummary.roomCharges + mockBillSummary.taxes + mockBillSummary.additionalCharges;
-  const finalAmount = mockBillSummary.total - mockBillSummary.securityDeposit;
+  const { data: guestData, isLoading: guestLoading } = useQuery<{ guest: Guest }>({
+    queryKey: ["/api/guests", folioData?.reservation?.guestId],
+    enabled: !!folioData?.reservation?.guestId
+  });
+
+  const checkOutMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/reservations/${reservationId}/check-out`, {
+        method: "POST"
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Check-out Successful",
+        description: "Guest has been checked out successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/front-desk/departures-today"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/front-desk/overview"] });
+      onCheckOutComplete?.(folioData);
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Check-out Failed",
+        description: error.message || "Failed to process check-out",
+      });
+    }
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsProcessing(true);
-
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    const checkOutData = {
-      guest: guestData?.name,
-      room: guestData?.roomNumber,
-      checkOutTime: new Date().toISOString(),
-      billSummary: mockBillSummary,
-      finalAmount,
-      ...checkOutDetails
-    };
-
-    console.log('Check-out completed:', checkOutData);
-    
-    toast({
-      title: "Check-out Successful",
-      description: `${guestData?.name} has been checked out from room ${guestData?.roomNumber}`,
-    });
-
-    setIsProcessing(false);
-    onCheckOutComplete?.(checkOutData);
+    if (!reservationId) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No reservation selected for check-out",
+      });
+      return;
+    }
+    checkOutMutation.mutate();
   };
+
+  const guest = guestData?.guest;
+  const reservation = folioData?.reservation;
+  const folio = folioData?.folio;
+  const isLoading = folioLoading || guestLoading;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-12" data-testid="loader-checkout">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!reservationId) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-muted-foreground">No reservation selected</p>
+        <p className="text-sm text-muted-foreground mt-2">Please select a guest to check out</p>
+      </div>
+    );
+  }
+
+  if (!reservation || !folio) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-destructive">Reservation or folio not found</p>
+        <p className="text-sm text-muted-foreground mt-2">Unable to load check-out information</p>
+      </div>
+    );
+  }
+
+  const totalCharges = folio?.charges?.reduce((sum, c) => sum + parseFloat(c.amount), 0) || 0;
+  const totalPayments = folio?.payments?.reduce((sum, p) => sum + parseFloat(p.amount), 0) || 0;
+  const balance = totalCharges - totalPayments;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {guestData && (
+      {guest && reservation && (
         <Card data-testid="card-guest-summary">
           <CardHeader>
             <CardTitle className="flex items-center gap-3">
               <Avatar className="h-10 w-10">
-                <AvatarImage src="/api/placeholder/40/40" />
-                <AvatarFallback>{guestData.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                <AvatarFallback>
+                  {guest.firstName[0]}{guest.lastName[0]}
+                </AvatarFallback>
               </Avatar>
               <div>
-                <div className="text-lg">{guestData.name}</div>
+                <div className="text-lg">{guest.firstName} {guest.lastName}</div>
                 <div className="text-sm text-muted-foreground">
-                  Room {guestData.roomNumber} • Checked in {guestData.checkInDate}
+                  {reservation.confirmationNumber} • Room {reservation.roomId}
                 </div>
               </div>
             </CardTitle>
@@ -104,35 +148,47 @@ export default function CheckOutForm({ guestData, onCheckOutComplete }: CheckOut
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="flex justify-between">
-              <span>Room Charges ({guestData?.totalNights || 2} nights)</span>
-              <span>${mockBillSummary.roomCharges.toFixed(2)}</span>
+          {folio?.charges && folio.charges.length > 0 ? (
+            <div className="space-y-2">
+              <div className="font-medium text-sm mb-2">Charges</div>
+              {folio.charges.map((charge) => (
+                <div key={charge.id} className="flex justify-between text-sm">
+                  <span>{charge.description}</span>
+                  <span>${parseFloat(charge.amount).toFixed(2)}</span>
+                </div>
+              ))}
             </div>
-            <div className="flex justify-between">
-              <span>Taxes & Fees</span>
-              <span>${mockBillSummary.taxes.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Additional Charges</span>
-              <span>${mockBillSummary.additionalCharges.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Security Deposit</span>
-              <span className="text-hotel-success">-${mockBillSummary.securityDeposit.toFixed(2)}</span>
-            </div>
-          </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No charges recorded</div>
+          )}
           
           <Separator />
           
-          <div className="flex justify-between font-semibold text-lg">
-            <span>Total Amount</span>
-            <span>${mockBillSummary.total.toFixed(2)}</span>
+          <div className="flex justify-between font-semibold">
+            <span>Total Charges</span>
+            <span>${totalCharges.toFixed(2)}</span>
           </div>
+
+          {folio?.payments && folio.payments.length > 0 && (
+            <>
+              <div className="space-y-2">
+                <div className="font-medium text-sm mb-2">Payments</div>
+                {folio.payments.map((payment) => (
+                  <div key={payment.id} className="flex justify-between text-sm text-hotel-success">
+                    <span>{payment.paymentMethod} ({new Date(payment.paymentDate).toLocaleDateString()})</span>
+                    <span>-${parseFloat(payment.amount).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <Separator />
+            </>
+          )}
           
-          <div className="flex justify-between font-bold text-xl text-primary">
-            <span>Amount Due</span>
-            <span data-testid="text-final-amount">${finalAmount.toFixed(2)}</span>
+          <div className="flex justify-between font-bold text-xl">
+            <span>Balance Due</span>
+            <span data-testid="text-final-amount" className={balance > 0 ? "text-destructive" : "text-hotel-success"}>
+              ${balance.toFixed(2)}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -202,18 +258,6 @@ export default function CheckOutForm({ guestData, onCheckOutComplete }: CheckOut
               />
             </div>
           )}
-
-          <div className="space-y-2">
-            <Label htmlFor="additionalCharges">Additional Charges Notes</Label>
-            <Textarea
-              id="additionalCharges"
-              value={checkOutDetails.additionalCharges}
-              onChange={(e) => setCheckOutDetails({...checkOutDetails, additionalCharges: e.target.value})}
-              placeholder="Any additional charges or notes..."
-              rows={2}
-              data-testid="textarea-additional-charges"
-            />
-          </div>
         </CardContent>
       </Card>
 
@@ -256,42 +300,15 @@ export default function CheckOutForm({ guestData, onCheckOutComplete }: CheckOut
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CreditCard className="h-5 w-5" />
-            Final Payment
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <Label htmlFor="finalPaymentMethod">Payment Method</Label>
-            <Select value={checkOutDetails.finalPaymentMethod} onValueChange={(value) => 
-              setCheckOutDetails({...checkOutDetails, finalPaymentMethod: value})}>
-              <SelectTrigger data-testid="select-final-payment-method">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="same-as-checkin">Same as Check-in</SelectItem>
-                <SelectItem value="credit-card">Credit Card</SelectItem>
-                <SelectItem value="debit-card">Debit Card</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="corporate">Corporate Account</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
       <Separator />
 
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
           <Badge variant="outline">
-            Final Amount: ${finalAmount.toFixed(2)}
+            Balance: ${balance.toFixed(2)}
           </Badge>
-          <Badge variant={finalAmount > 0 ? "destructive" : "default"}>
-            {finalAmount > 0 ? "Payment Required" : "No Payment Due"}
+          <Badge variant={balance > 0 ? "destructive" : "default"}>
+            {balance > 0 ? "Payment Required" : "Fully Paid"}
           </Badge>
         </div>
 
@@ -306,10 +323,17 @@ export default function CheckOutForm({ guestData, onCheckOutComplete }: CheckOut
           </Button>
           <Button 
             type="submit" 
-            disabled={isProcessing}
+            disabled={checkOutMutation.isPending}
             data-testid="button-complete-checkout"
           >
-            {isProcessing ? "Processing..." : "Complete Check-Out"}
+            {checkOutMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              "Complete Check-Out"
+            )}
           </Button>
         </div>
       </div>
