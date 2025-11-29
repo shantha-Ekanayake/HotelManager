@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import RoomStatusCard, { RoomStatus } from "@/components/RoomStatusCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,11 +13,36 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Filter, Plus, Loader2, Settings, DollarSign, Building2, BedDouble, Users, RefreshCw } from "lucide-react";
+import { Search, Filter, Plus, Loader2, Settings, DollarSign, Building2, BedDouble, Users, RefreshCw, Lock, Unlock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import type { Room, RoomType, RatePlan } from "@shared/schema";
+
+// Validation schemas
+const addRoomSchema = z.object({
+  roomNumber: z.string().min(1, "Room number is required"),
+  roomTypeId: z.string().min(1, "Room type is required"),
+  floor: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+const addRoomTypeSchema = z.object({
+  name: z.string().min(1, "Room type name is required"),
+  description: z.string().optional(),
+  maxOccupancy: z.number().min(1, "Max occupancy must be at least 1"),
+  baseRate: z.number().min(0, "Base rate must be 0 or more"),
+});
+
+const addRatePlanSchema = z.object({
+  name: z.string().min(1, "Rate plan name is required"),
+  description: z.string().optional(),
+  minLengthOfStay: z.number().optional(),
+  maxLengthOfStay: z.number().optional(),
+  isRefundable: z.boolean(),
+  cancellationPolicy: z.string().optional(),
+});
 
 interface RoomsResponse {
   rooms: Room[];
@@ -122,9 +150,30 @@ export default function Rooms() {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [isRoomDetailsOpen, setIsRoomDetailsOpen] = useState(false);
+  const [isAddRoomOpen, setIsAddRoomOpen] = useState(false);
+  const [isAddRoomTypeOpen, setIsAddRoomTypeOpen] = useState(false);
+  const [isAddRatePlanOpen, setIsAddRatePlanOpen] = useState(false);
+  const [isBlockingRoomOpen, setIsBlockingRoomOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<RoomStatus>("available");
   const [statusNotes, setStatusNotes] = useState("");
   const [activeTab, setActiveTab] = useState("rooms");
+  const [blockingRoomId, setBlockingRoomId] = useState<string | null>(null);
+  const [blockingRoomBlocked, setBlockingRoomBlocked] = useState(false);
+
+  const roomForm = useForm({
+    resolver: zodResolver(addRoomSchema),
+    defaultValues: { roomNumber: "", roomTypeId: "", floor: "", notes: "" },
+  });
+
+  const roomTypeForm = useForm({
+    resolver: zodResolver(addRoomTypeSchema),
+    defaultValues: { name: "", description: "", maxOccupancy: 2, baseRate: 100 },
+  });
+
+  const ratePlanForm = useForm({
+    resolver: zodResolver(addRatePlanSchema),
+    defaultValues: { name: "", description: "", isRefundable: true, cancellationPolicy: "" },
+  });
 
   const { data: userData } = useCurrentUser();
   const propertyId = userData?.user?.propertyId || "prop-demo";
@@ -158,11 +207,90 @@ export default function Rooms() {
       setSelectedRoom(null);
       setStatusNotes("");
     },
-    onError: (error) => {
+    onError: () => {
       toast({
         variant: "destructive",
         title: "Error",
         description: "Failed to update room status",
+      });
+    },
+  });
+
+  const addRoomMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof addRoomSchema>) => {
+      return apiRequest('POST', '/api/rooms', { ...data, propertyId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rooms`] });
+      toast({ title: "Room added successfully" });
+      setIsAddRoomOpen(false);
+      roomForm.reset();
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to add room",
+      });
+    },
+  });
+
+  const addRoomTypeMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof addRoomTypeSchema>) => {
+      return apiRequest('POST', '/api/room-types', { ...data, propertyId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/room-types`] });
+      toast({ title: "Room type added successfully" });
+      setIsAddRoomTypeOpen(false);
+      roomTypeForm.reset();
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to add room type",
+      });
+    },
+  });
+
+  const addRatePlanMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof addRatePlanSchema>) => {
+      return apiRequest('POST', '/api/rate-plans', { ...data, propertyId, isActive: true });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rate-plans`] });
+      toast({ title: "Rate plan added successfully" });
+      setIsAddRatePlanOpen(false);
+      ratePlanForm.reset();
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to add rate plan",
+      });
+    },
+  });
+
+  const blockRoomMutation = useMutation({
+    mutationFn: async ({ roomId, isBlocked }: { roomId: string; isBlocked: boolean }) => {
+      return apiRequest('PATCH', `/api/rooms/${roomId}/block`, { isBlocked });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rooms`] });
+      toast({
+        title: blockingRoomBlocked ? "Room blocked" : "Room unblocked",
+        description: `Room ${selectedRoom?.roomNumber} has been ${blockingRoomBlocked ? 'blocked' : 'unblocked'}`,
+      });
+      setIsBlockingRoomOpen(false);
+      setBlockingRoomId(null);
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update room blocking status",
       });
     },
   });
@@ -268,7 +396,7 @@ export default function Rooms() {
             Manage room status and availability
           </p>
         </div>
-        <Button data-testid="button-add-room">
+        <Button data-testid="button-add-room" onClick={() => setIsAddRoomOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Add Room
         </Button>
@@ -411,7 +539,7 @@ export default function Rooms() {
         <TabsContent value="room-types" className="space-y-6 mt-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Room Types Configuration</h2>
-            <Button data-testid="button-add-room-type">
+            <Button data-testid="button-add-room-type" onClick={() => setIsAddRoomTypeOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Add Room Type
             </Button>
@@ -475,7 +603,7 @@ export default function Rooms() {
         <TabsContent value="rate-plans" className="space-y-6 mt-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Rate Plans</h2>
-            <Button data-testid="button-add-rate-plan">
+            <Button data-testid="button-add-rate-plan" onClick={() => setIsAddRatePlanOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Add Rate Plan
             </Button>
@@ -632,29 +760,227 @@ export default function Rooms() {
                   </p>
                 </div>
               )}
-              <div className="flex gap-2 pt-4">
+              <div className="flex flex-col gap-2 pt-4">
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1"
+                    onClick={() => {
+                      setIsRoomDetailsOpen(false);
+                      setNewStatus(selectedRoom.status as RoomStatus);
+                      setIsStatusDialogOpen(true);
+                    }}
+                    data-testid="button-change-room-status"
+                  >
+                    Change Status
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="flex-1"
+                    data-testid="button-edit-room"
+                  >
+                    Edit Room
+                  </Button>
+                </div>
                 <Button 
-                  variant="outline" 
-                  className="flex-1"
+                  variant="outline"
                   onClick={() => {
-                    setIsRoomDetailsOpen(false);
-                    setNewStatus(selectedRoom.status as RoomStatus);
-                    setIsStatusDialogOpen(true);
+                    setBlockingRoomId(selectedRoom.id);
+                    setBlockingRoomBlocked(!selectedRoom.isActive);
+                    setIsBlockingRoomOpen(true);
                   }}
-                  data-testid="button-change-room-status"
+                  data-testid="button-toggle-room-blocking"
                 >
-                  Change Status
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="flex-1"
-                  data-testid="button-edit-room"
-                >
-                  Edit Room
+                  {selectedRoom.isActive ? (
+                    <><Lock className="h-4 w-4 mr-2" />Block Room</>
+                  ) : (
+                    <><Unlock className="h-4 w-4 mr-2" />Unblock Room</>
+                  )}
                 </Button>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Room Dialog */}
+      <Dialog open={isAddRoomOpen} onOpenChange={setIsAddRoomOpen}>
+        <DialogContent data-testid="dialog-add-room">
+          <DialogHeader>
+            <DialogTitle>Add New Room</DialogTitle>
+          </DialogHeader>
+          <Form {...roomForm}>
+            <form onSubmit={roomForm.handleSubmit((data) => addRoomMutation.mutate(data))} className="space-y-4">
+              <FormField control={roomForm.control} name="roomNumber" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Room Number</FormLabel>
+                  <FormControl><Input placeholder="e.g., 101" {...field} data-testid="input-room-number" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomForm.control} name="roomTypeId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Room Type</FormLabel>
+                  <FormControl>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger data-testid="select-room-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roomTypes.map((rt) => (
+                          <SelectItem key={rt.id} value={rt.id}>{rt.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomForm.control} name="floor" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Floor (Optional)</FormLabel>
+                  <FormControl><Input placeholder="e.g., 1" {...field} data-testid="input-floor" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomForm.control} name="notes" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Notes (Optional)</FormLabel>
+                  <FormControl><Textarea placeholder="Room notes..." {...field} data-testid="input-room-notes" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setIsAddRoomOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={addRoomMutation.isPending} data-testid="button-submit-add-room">
+                  {addRoomMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Add Room
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Room Type Dialog */}
+      <Dialog open={isAddRoomTypeOpen} onOpenChange={setIsAddRoomTypeOpen}>
+        <DialogContent data-testid="dialog-add-room-type">
+          <DialogHeader>
+            <DialogTitle>Add Room Type</DialogTitle>
+          </DialogHeader>
+          <Form {...roomTypeForm}>
+            <form onSubmit={roomTypeForm.handleSubmit((data) => addRoomTypeMutation.mutate(data))} className="space-y-4">
+              <FormField control={roomTypeForm.control} name="name" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name</FormLabel>
+                  <FormControl><Input placeholder="e.g., Standard Room" {...field} data-testid="input-room-type-name" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomTypeForm.control} name="description" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description</FormLabel>
+                  <FormControl><Textarea placeholder="Room description..." {...field} data-testid="input-room-type-description" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomTypeForm.control} name="maxOccupancy" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Max Occupancy</FormLabel>
+                  <FormControl><Input type="number" min="1" {...field} onChange={(e) => field.onChange(parseInt(e.target.value))} data-testid="input-max-occupancy" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomTypeForm.control} name="baseRate" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Base Rate ($)</FormLabel>
+                  <FormControl><Input type="number" min="0" step="0.01" {...field} onChange={(e) => field.onChange(parseFloat(e.target.value))} data-testid="input-base-rate" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setIsAddRoomTypeOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={addRoomTypeMutation.isPending} data-testid="button-submit-add-room-type">
+                  {addRoomTypeMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Add Room Type
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Rate Plan Dialog */}
+      <Dialog open={isAddRatePlanOpen} onOpenChange={setIsAddRatePlanOpen}>
+        <DialogContent data-testid="dialog-add-rate-plan">
+          <DialogHeader>
+            <DialogTitle>Add Rate Plan</DialogTitle>
+          </DialogHeader>
+          <Form {...ratePlanForm}>
+            <form onSubmit={ratePlanForm.handleSubmit((data) => addRatePlanMutation.mutate(data))} className="space-y-4">
+              <FormField control={ratePlanForm.control} name="name" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name</FormLabel>
+                  <FormControl><Input placeholder="e.g., Standard Rate" {...field} data-testid="input-rate-plan-name" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={ratePlanForm.control} name="description" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description</FormLabel>
+                  <FormControl><Textarea placeholder="Rate plan description..." {...field} data-testid="input-rate-plan-description" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={ratePlanForm.control} name="isRefundable" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Refundable</FormLabel>
+                  <FormControl>
+                    <Select value={field.value ? "true" : "false"} onValueChange={(v) => field.onChange(v === "true")}>
+                      <SelectTrigger data-testid="select-refundable">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">Refundable</SelectItem>
+                        <SelectItem value="false">Non-Refundable</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setIsAddRatePlanOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={addRatePlanMutation.isPending} data-testid="button-submit-add-rate-plan">
+                  {addRatePlanMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Add Rate Plan
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Block Room Dialog */}
+      <Dialog open={isBlockingRoomOpen} onOpenChange={setIsBlockingRoomOpen}>
+        <DialogContent data-testid="dialog-block-room">
+          <DialogHeader>
+            <DialogTitle>{blockingRoomBlocked ? "Block Room" : "Unblock Room"}</DialogTitle>
+            <DialogDescription>
+              Room {selectedRoom?.roomNumber} will be {blockingRoomBlocked ? "blocked from bookings" : "made available for bookings"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBlockingRoomOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={() => blockRoomMutation.mutate({ roomId: blockingRoomId || "", isBlocked: blockingRoomBlocked })}
+              disabled={blockRoomMutation.isPending}
+              data-testid="button-confirm-blocking"
+            >
+              {blockRoomMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {blockingRoomBlocked ? "Block Room" : "Unblock Room"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
