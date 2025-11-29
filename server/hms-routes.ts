@@ -373,6 +373,64 @@ export function registerRoomRoutes(app: Express) {
     }
   );
 
+  // Update room type
+  app.put("/api/room-types/:id", 
+    authenticate, 
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        
+        const roomType = await storage.updateRoomType(id, updateData);
+        res.json({ roomType });
+      } catch (error) {
+        console.error("Update room type error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Create rate plan
+  app.post("/api/properties/:propertyId/rate-plans", 
+    authenticate, 
+    authorize("rooms.manage"),
+    requirePropertyAccess(),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { propertyId } = req.params;
+        const ratePlanData = {
+          ...req.body,
+          propertyId
+        };
+        
+        const ratePlan = await storage.createRatePlan(ratePlanData);
+        res.status(201).json({ ratePlan });
+      } catch (error) {
+        console.error("Create rate plan error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update rate plan
+  app.put("/api/rate-plans/:id", 
+    authenticate, 
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        
+        const ratePlan = await storage.updateRatePlan(id, updateData);
+        res.json({ ratePlan });
+      } catch (error) {
+        console.error("Update rate plan error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
   // Create room
   app.post("/api/properties/:propertyId/rooms", 
     authenticate, 
@@ -411,6 +469,47 @@ export function registerRoomRoutes(app: Express) {
         res.json({ room });
       } catch (error) {
         console.error("Update room status error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Block/unblock room (out of order management)
+  app.patch("/api/rooms/:id/block", 
+    authenticate, 
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { isActive, notes, status } = req.body;
+        
+        const updateData: { isActive?: boolean; notes?: string; status?: string } = {};
+        if (typeof isActive === 'boolean') updateData.isActive = isActive;
+        if (notes !== undefined) updateData.notes = notes;
+        if (status) updateData.status = status;
+        
+        const room = await storage.updateRoom(id, updateData);
+        res.json({ room });
+      } catch (error) {
+        console.error("Block/unblock room error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update room details
+  app.put("/api/rooms/:id", 
+    authenticate, 
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        
+        const room = await storage.updateRoom(id, updateData);
+        res.json({ room });
+      } catch (error) {
+        console.error("Update room error:", error);
         res.status(500).json({ error: "Internal server error" });
       }
     }
@@ -595,6 +694,26 @@ export function registerGuestRoutes(app: Express) {
 
 // Reservation Management Routes
 export function registerReservationRoutes(app: Express) {
+  // Get all reservations for user's property
+  app.get("/api/reservations", 
+    authenticate, 
+    authorize("reservations.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "Property ID required" });
+        }
+        
+        const reservations = await storage.getReservationsByProperty(propertyId);
+        res.json({ reservations });
+      } catch (error) {
+        console.error("Get reservations error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
   // Get reservations by property
   app.get("/api/properties/:propertyId/reservations", 
     authenticate, 

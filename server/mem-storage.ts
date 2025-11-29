@@ -137,7 +137,7 @@ class MemStorage implements IHMSStorage {
     ];
     roomTypes.forEach(rt => this.roomTypes.set(rt.id, rt));
 
-    // Create rooms
+    // Create rooms with various statuses for realistic demo
     const rooms: Room[] = [
       {
         id: "room-101",
@@ -158,10 +158,49 @@ class MemStorage implements IHMSStorage {
         roomTypeId: "rt-standard",
         roomNumber: "102",
         floor: 1,
-        status: "available",
+        status: "occupied",
+        isActive: true,
+        notes: null,
+        lastCleaned: new Date(Date.now() - 86400000),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "room-103",
+        propertyId: property.id,
+        roomTypeId: "rt-standard",
+        roomNumber: "103",
+        floor: 1,
+        status: "dirty",
+        isActive: true,
+        notes: "Guest checked out this morning",
+        lastCleaned: new Date(Date.now() - 172800000),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "room-104",
+        propertyId: property.id,
+        roomTypeId: "rt-standard",
+        roomNumber: "104",
+        floor: 1,
+        status: "clean",
         isActive: true,
         notes: null,
         lastCleaned: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "room-105",
+        propertyId: property.id,
+        roomTypeId: "rt-standard",
+        roomNumber: "105",
+        floor: 1,
+        status: "maintenance",
+        isActive: true,
+        notes: "AC unit repair scheduled",
+        lastCleaned: new Date(Date.now() - 259200000),
         createdAt: new Date(),
         updatedAt: new Date()
       },
@@ -175,6 +214,71 @@ class MemStorage implements IHMSStorage {
         isActive: true,
         notes: null,
         lastCleaned: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "room-202",
+        propertyId: property.id,
+        roomTypeId: "rt-deluxe",
+        roomNumber: "202",
+        floor: 2,
+        status: "occupied",
+        isActive: true,
+        notes: "VIP guest - extra amenities",
+        lastCleaned: new Date(Date.now() - 86400000),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "room-203",
+        propertyId: property.id,
+        roomTypeId: "rt-deluxe",
+        roomNumber: "203",
+        floor: 2,
+        status: "clean",
+        isActive: true,
+        notes: null,
+        lastCleaned: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "room-204",
+        propertyId: property.id,
+        roomTypeId: "rt-deluxe",
+        roomNumber: "204",
+        floor: 2,
+        status: "dirty",
+        isActive: true,
+        notes: null,
+        lastCleaned: new Date(Date.now() - 86400000),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "room-301",
+        propertyId: property.id,
+        roomTypeId: "rt-deluxe",
+        roomNumber: "301",
+        floor: 3,
+        status: "available",
+        isActive: true,
+        notes: "Corner room with city view",
+        lastCleaned: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "room-302",
+        propertyId: property.id,
+        roomTypeId: "rt-standard",
+        roomNumber: "302",
+        floor: 3,
+        status: "maintenance",
+        isActive: false,
+        notes: "Out of order - bathroom renovation",
+        lastCleaned: new Date(Date.now() - 604800000),
         createdAt: new Date(),
         updatedAt: new Date()
       }
@@ -205,23 +309,70 @@ class MemStorage implements IHMSStorage {
     };
     this.guests.set(guest.id, guest);
 
-    // Create a rate plan
-    const ratePlan: RatePlan = {
-      id: "rp-standard",
-      propertyId: property.id,
-      name: "Standard Rate",
-      description: "Standard booking rate",
-      isActive: true,
-      minLengthOfStay: 1,
-      maxLengthOfStay: null,
-      cancellationPolicy: "Free cancellation up to 24 hours before check-in",
-      isRefundable: true,
-      advanceBookingDays: null,
-      restrictions: {},
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    this.ratePlans.set(ratePlan.id, ratePlan);
+    // Create rate plans
+    const ratePlans: RatePlan[] = [
+      {
+        id: "rp-standard",
+        propertyId: property.id,
+        name: "Standard Rate",
+        description: "Standard booking rate with flexible cancellation",
+        isActive: true,
+        minLengthOfStay: 1,
+        maxLengthOfStay: null,
+        cancellationPolicy: "Free cancellation up to 24 hours before check-in",
+        isRefundable: true,
+        advanceBookingDays: null,
+        restrictions: {},
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "rp-advance",
+        propertyId: property.id,
+        name: "Advance Purchase",
+        description: "Book 14+ days ahead and save 15%",
+        isActive: true,
+        minLengthOfStay: 1,
+        maxLengthOfStay: 14,
+        cancellationPolicy: "Non-refundable. No cancellations or changes allowed.",
+        isRefundable: false,
+        advanceBookingDays: 14,
+        restrictions: {},
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "rp-weekly",
+        propertyId: property.id,
+        name: "Weekly Rate",
+        description: "Extended stay discount for 7+ nights",
+        isActive: true,
+        minLengthOfStay: 7,
+        maxLengthOfStay: null,
+        cancellationPolicy: "Free cancellation up to 72 hours before check-in",
+        isRefundable: true,
+        advanceBookingDays: null,
+        restrictions: {},
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "rp-corporate",
+        propertyId: property.id,
+        name: "Corporate Rate",
+        description: "Special rates for business travelers",
+        isActive: true,
+        minLengthOfStay: 1,
+        maxLengthOfStay: null,
+        cancellationPolicy: "Free cancellation up to 6PM on arrival day",
+        isRefundable: true,
+        advanceBookingDays: null,
+        restrictions: { requiresCorporateId: true },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+    ratePlans.forEach(rp => this.ratePlans.set(rp.id, rp));
   }
 
   // User Management

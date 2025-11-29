@@ -1,95 +1,263 @@
 import { useState } from "react";
-import RoomStatusCard from "@/components/RoomStatusCard";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import RoomStatusCard, { RoomStatus } from "@/components/RoomStatusCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, Filter, Plus } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, Filter, Plus, Loader2, Settings, DollarSign, Building2, BedDouble, Users, RefreshCw } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { Room, RoomType, RatePlan } from "@shared/schema";
 
-// TODO: remove mock functionality - replace with real data
-const mockRooms = [
-  {
-    roomNumber: "101",
-    roomType: "Standard King",
-    status: "occupied" as const,
-    guestName: "John Doe",
-    checkIn: "Dec 20",
-    checkOut: "Dec 23",
-    amenities: ["WiFi", "Coffee", "Parking"]
-  },
-  {
-    roomNumber: "102",
-    roomType: "Deluxe Queen",
-    status: "dirty" as const,
-    amenities: ["WiFi", "Business"]
-  },
-  {
-    roomNumber: "103",
-    roomType: "Suite",
-    status: "clean" as const,
-    amenities: ["WiFi", "Coffee", "Parking", "Business"]
-  },
-  {
-    roomNumber: "104",
-    roomType: "Standard Queen",
-    status: "available" as const,
-    amenities: ["WiFi", "Coffee"]
-  },
-  {
-    roomNumber: "105",
-    roomType: "Deluxe King",
-    status: "maintenance" as const,
-    amenities: ["WiFi", "Coffee", "Parking"]
-  },
-  {
-    roomNumber: "201",
-    roomType: "Executive Suite",
-    status: "occupied" as const,
-    guestName: "Sarah Wilson",
-    checkIn: "Dec 21",
-    checkOut: "Dec 24",
-    amenities: ["WiFi", "Business", "Coffee", "Parking"]
-  },
-  {
-    roomNumber: "202",
-    roomType: "Standard King",
-    status: "clean" as const,
-    amenities: ["WiFi", "Coffee"]
-  },
-  {
-    roomNumber: "203",
-    roomType: "Deluxe Queen",
-    status: "available" as const,
-    amenities: ["WiFi", "Business", "Coffee"]
-  }
-];
+interface RoomsResponse {
+  rooms: Room[];
+}
+
+interface RoomTypesResponse {
+  roomTypes: RoomType[];
+}
+
+interface RatePlansResponse {
+  ratePlans: RatePlan[];
+}
+
+interface ReservationsResponse {
+  reservations: Array<{
+    id: string;
+    guestId: string;
+    roomId?: string;
+    status: string;
+    arrivalDate: string;
+    departureDate: string;
+  }>;
+}
+
+interface GuestsResponse {
+  guests: Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+  }>;
+}
+
+function useRooms(propertyId: string) {
+  return useQuery<RoomsResponse>({
+    queryKey: [`/api/properties/${propertyId}/rooms`],
+    enabled: !!propertyId,
+  });
+}
+
+function useRoomTypes(propertyId: string) {
+  return useQuery<RoomTypesResponse>({
+    queryKey: [`/api/properties/${propertyId}/room-types`],
+    enabled: !!propertyId,
+  });
+}
+
+function useRatePlans(propertyId: string) {
+  return useQuery<RatePlansResponse>({
+    queryKey: [`/api/properties/${propertyId}/rate-plans`],
+    enabled: !!propertyId,
+  });
+}
+
+function useReservations() {
+  return useQuery<ReservationsResponse>({
+    queryKey: ['/api/reservations'],
+  });
+}
+
+function useGuests() {
+  return useQuery<GuestsResponse>({
+    queryKey: ['/api/guests'],
+  });
+}
+
+function useCurrentUser() {
+  return useQuery<{ user: { propertyId: string } }>({
+    queryKey: ['/api/auth/me'],
+  });
+}
+
+function RoomsSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4 text-center">
+              <Skeleton className="h-8 w-12 mx-auto mb-2" />
+              <Skeleton className="h-3 w-16 mx-auto" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4 space-y-3">
+              <Skeleton className="h-6 w-24" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Rooms() {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+  const [isRoomDetailsOpen, setIsRoomDetailsOpen] = useState(false);
+  const [newStatus, setNewStatus] = useState<RoomStatus>("available");
+  const [statusNotes, setStatusNotes] = useState("");
+  const [activeTab, setActiveTab] = useState("rooms");
 
-  const filteredRooms = mockRooms.filter(room => {
+  const { data: userData } = useCurrentUser();
+  const propertyId = userData?.user?.propertyId || "prop-demo";
+
+  const { data: roomsData, isLoading: roomsLoading, error: roomsError } = useRooms(propertyId);
+  const { data: roomTypesData, isLoading: typesLoading } = useRoomTypes(propertyId);
+  const { data: ratePlansData } = useRatePlans(propertyId);
+  const { data: reservationsData } = useReservations();
+  const { data: guestsData } = useGuests();
+
+  const rooms = roomsData?.rooms || [];
+  const roomTypes = roomTypesData?.roomTypes || [];
+  const ratePlans = ratePlansData?.ratePlans || [];
+  const reservations = reservationsData?.reservations || [];
+  const guests = guestsData?.guests || [];
+
+  const roomTypeMap = new Map(roomTypes.map(rt => [rt.id, rt]));
+  const guestMap = new Map(guests.map(g => [g.id, g]));
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ roomId, status, notes }: { roomId: string; status: string; notes?: string }) => {
+      return apiRequest('PATCH', `/api/rooms/${roomId}/status`, { status, notes });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rooms`] });
+      toast({
+        title: "Room status updated",
+        description: `Room ${selectedRoom?.roomNumber} status changed to ${newStatus}`,
+      });
+      setIsStatusDialogOpen(false);
+      setSelectedRoom(null);
+      setStatusNotes("");
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update room status",
+      });
+    },
+  });
+
+  const enrichedRooms = rooms.map(room => {
+    const roomType = roomTypeMap.get(room.roomTypeId);
+    const currentReservation = reservations.find(
+      r => r.roomId === room.id && r.status === 'checked_in'
+    );
+    const guest = currentReservation ? guestMap.get(currentReservation.guestId) : null;
+
+    return {
+      ...room,
+      roomTypeName: roomType?.name || 'Unknown Type',
+      amenities: roomType?.amenities || [],
+      guestName: guest ? `${guest.firstName} ${guest.lastName}` : undefined,
+      checkIn: currentReservation ? new Date(currentReservation.arrivalDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined,
+      checkOut: currentReservation ? new Date(currentReservation.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined,
+    };
+  });
+
+  const filteredRooms = enrichedRooms.filter(room => {
     const matchesSearch = room.roomNumber.includes(searchTerm) ||
-                         room.roomType.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         room.roomTypeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (room.guestName && room.guestName.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStatus = statusFilter === "all" || room.status === statusFilter;
-    const matchesType = typeFilter === "all" || room.roomType === typeFilter;
+    const matchesType = typeFilter === "all" || room.roomTypeId === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  // TODO: remove mock functionality - replace with real data
   const statusCounts = {
-    total: mockRooms.length,
-    occupied: mockRooms.filter(r => r.status === "occupied").length,
-    available: mockRooms.filter(r => r.status === "available").length,
-    clean: mockRooms.filter(r => r.status === "clean").length,
-    dirty: mockRooms.filter(r => r.status === "dirty").length,
-    maintenance: mockRooms.filter(r => r.status === "maintenance").length,
+    total: rooms.length,
+    occupied: rooms.filter(r => r.status === "occupied").length,
+    available: rooms.filter(r => r.status === "available").length,
+    clean: rooms.filter(r => r.status === "clean").length,
+    dirty: rooms.filter(r => r.status === "dirty").length,
+    maintenance: rooms.filter(r => r.status === "maintenance").length,
   };
 
-  const occupancyRate = Math.round((statusCounts.occupied / statusCounts.total) * 100);
+  const occupancyRate = statusCounts.total > 0 ? Math.round((statusCounts.occupied / statusCounts.total) * 100) : 0;
+
+  const handleStatusChange = (room: Room, status: RoomStatus) => {
+    setSelectedRoom(room);
+    setNewStatus(status);
+    setIsStatusDialogOpen(true);
+  };
+
+  const handleViewDetails = (room: Room) => {
+    setSelectedRoom(room);
+    setIsRoomDetailsOpen(true);
+  };
+
+  const confirmStatusChange = () => {
+    if (selectedRoom) {
+      updateStatusMutation.mutate({
+        roomId: selectedRoom.id,
+        status: newStatus,
+        notes: statusNotes || undefined,
+      });
+    }
+  };
+
+  if (roomsLoading || typesLoading) {
+    return (
+      <div className="space-y-6" data-testid="page-rooms">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Rooms</h1>
+            <p className="text-muted-foreground">Manage room status and availability</p>
+          </div>
+        </div>
+        <RoomsSkeleton />
+      </div>
+    );
+  }
+
+  if (roomsError) {
+    return (
+      <div className="space-y-6" data-testid="page-rooms">
+        <Card>
+          <CardContent className="text-center py-8">
+            <p className="text-destructive">Failed to load rooms. Please try again.</p>
+            <Button 
+              variant="outline" 
+              className="mt-4"
+              onClick={() => queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rooms`] })}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6" data-testid="page-rooms">
@@ -106,116 +274,389 @@ export default function Rooms() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-foreground">{statusCounts.total}</div>
-            <div className="text-xs text-muted-foreground">Total Rooms</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-hotel-success">{statusCounts.occupied}</div>
-            <div className="text-xs text-muted-foreground">Occupied</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-hotel-success">{statusCounts.available}</div>
-            <div className="text-xs text-muted-foreground">Available</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-hotel-success">{statusCounts.clean}</div>
-            <div className="text-xs text-muted-foreground">Clean</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-hotel-warning">{statusCounts.dirty}</div>
-            <div className="text-xs text-muted-foreground">Dirty</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-hotel-error">{statusCounts.maintenance}</div>
-            <div className="text-xs text-muted-foreground">Maintenance</div>
-          </CardContent>
-        </Card>
-      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
+          <TabsTrigger value="rooms" className="flex items-center gap-2" data-testid="tab-rooms">
+            <BedDouble className="h-4 w-4" />
+            Rooms
+          </TabsTrigger>
+          <TabsTrigger value="room-types" className="flex items-center gap-2" data-testid="tab-room-types">
+            <Building2 className="h-4 w-4" />
+            Room Types
+          </TabsTrigger>
+          <TabsTrigger value="rate-plans" className="flex items-center gap-2" data-testid="tab-rate-plans">
+            <DollarSign className="h-4 w-4" />
+            Rate Plans
+          </TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Search & Filter</CardTitle>
-            <Badge variant="outline" data-testid="badge-occupancy-rate">
-              {occupancyRate}% Occupancy
-            </Badge>
+        <TabsContent value="rooms" className="space-y-6 mt-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <Card data-testid="stat-total-rooms">
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-foreground">{statusCounts.total}</div>
+                <div className="text-xs text-muted-foreground">Total Rooms</div>
+              </CardContent>
+            </Card>
+            <Card data-testid="stat-occupied">
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-primary">{statusCounts.occupied}</div>
+                <div className="text-xs text-muted-foreground">Occupied</div>
+              </CardContent>
+            </Card>
+            <Card data-testid="stat-available">
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-hotel-success">{statusCounts.available}</div>
+                <div className="text-xs text-muted-foreground">Available</div>
+              </CardContent>
+            </Card>
+            <Card data-testid="stat-clean">
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-hotel-success">{statusCounts.clean}</div>
+                <div className="text-xs text-muted-foreground">Clean</div>
+              </CardContent>
+            </Card>
+            <Card data-testid="stat-dirty">
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-hotel-warning">{statusCounts.dirty}</div>
+                <div className="text-xs text-muted-foreground">Dirty</div>
+              </CardContent>
+            </Card>
+            <Card data-testid="stat-maintenance">
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-hotel-error">{statusCounts.maintenance}</div>
+                <div className="text-xs text-muted-foreground">Maintenance</div>
+              </CardContent>
+            </Card>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by room number, type, or guest..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-                data-testid="input-search-rooms"
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-4">
+                <CardTitle>Search & Filter</CardTitle>
+                <Badge variant="outline" data-testid="badge-occupancy-rate">
+                  {occupancyRate}% Occupancy
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[200px] relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by room number, type, or guest..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                    data-testid="input-search-rooms"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-40" data-testid="select-status-filter">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="occupied">Occupied</SelectItem>
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="clean">Clean</SelectItem>
+                    <SelectItem value="dirty">Dirty</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-48" data-testid="select-type-filter">
+                    <SelectValue placeholder="Room Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {roomTypes.map((rt) => (
+                      <SelectItem key={rt.id} value={rt.id}>
+                        {rt.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredRooms.map((room) => (
+              <RoomStatusCard
+                key={room.id}
+                roomNumber={room.roomNumber}
+                roomType={room.roomTypeName}
+                status={room.status as RoomStatus}
+                guestName={room.guestName}
+                checkIn={room.checkIn}
+                checkOut={room.checkOut}
+                amenities={room.amenities as string[]}
+                onStatusChange={(status) => handleStatusChange(room, status)}
+                onViewDetails={() => handleViewDetails(room)}
+              />
+            ))}
+          </div>
+
+          {filteredRooms.length === 0 && (
+            <Card>
+              <CardContent className="text-center py-8">
+                <p className="text-muted-foreground">No rooms found matching your criteria.</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="room-types" className="space-y-6 mt-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Room Types Configuration</h2>
+            <Button data-testid="button-add-room-type">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Room Type
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {roomTypes.map((roomType) => {
+              const roomCount = rooms.filter(r => r.roomTypeId === roomType.id).length;
+              return (
+                <Card key={roomType.id} className="hover-elevate" data-testid={`card-room-type-${roomType.id}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{roomType.name}</CardTitle>
+                      <Badge variant="outline">{roomCount} rooms</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-muted-foreground">{roomType.description || 'No description'}</p>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-1">
+                        <Users className="h-4 w-4" />
+                        Max {roomType.maxOccupancy} guests
+                      </span>
+                      <span className="font-semibold text-primary">${roomType.baseRate}/night</span>
+                    </div>
+                    {roomType.amenities && (roomType.amenities as string[]).length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {(roomType.amenities as string[]).slice(0, 4).map((amenity, idx) => (
+                          <Badge key={idx} variant="secondary" className="text-xs">{amenity}</Badge>
+                        ))}
+                        {(roomType.amenities as string[]).length > 4 && (
+                          <Badge variant="secondary" className="text-xs">+{(roomType.amenities as string[]).length - 4}</Badge>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-2">
+                      <Button size="sm" variant="outline" className="flex-1" data-testid={`button-edit-room-type-${roomType.id}`}>
+                        <Settings className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {roomTypes.length === 0 && (
+            <Card>
+              <CardContent className="text-center py-8">
+                <p className="text-muted-foreground">No room types configured yet.</p>
+                <Button className="mt-4" data-testid="button-create-first-room-type">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create First Room Type
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="rate-plans" className="space-y-6 mt-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Rate Plans</h2>
+            <Button data-testid="button-add-rate-plan">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Rate Plan
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {ratePlans.map((plan) => (
+              <Card key={plan.id} className="hover-elevate" data-testid={`card-rate-plan-${plan.id}`}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{plan.name}</CardTitle>
+                    <Badge variant={plan.isActive ? "default" : "secondary"}>
+                      {plan.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">{plan.description || 'No description'}</p>
+                  <div className="space-y-1 text-sm">
+                    {plan.minLengthOfStay && (
+                      <p>Min stay: {plan.minLengthOfStay} nights</p>
+                    )}
+                    {plan.maxLengthOfStay && (
+                      <p>Max stay: {plan.maxLengthOfStay} nights</p>
+                    )}
+                    <p className={plan.isRefundable ? "text-hotel-success" : "text-hotel-warning"}>
+                      {plan.isRefundable ? "Refundable" : "Non-refundable"}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{plan.cancellationPolicy}</p>
+                  <div className="flex gap-2 pt-2">
+                    <Button size="sm" variant="outline" className="flex-1" data-testid={`button-edit-rate-plan-${plan.id}`}>
+                      <Settings className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {ratePlans.length === 0 && (
+            <Card>
+              <CardContent className="text-center py-8">
+                <p className="text-muted-foreground">No rate plans configured yet.</p>
+                <Button className="mt-4" data-testid="button-create-first-rate-plan">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create First Rate Plan
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>
+        <DialogContent data-testid="dialog-change-status">
+          <DialogHeader>
+            <DialogTitle>Update Room Status</DialogTitle>
+            <DialogDescription>
+              Change the status of Room {selectedRoom?.roomNumber}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>New Status</Label>
+              <Select value={newStatus} onValueChange={(v) => setNewStatus(v as RoomStatus)}>
+                <SelectTrigger data-testid="select-new-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available">Available</SelectItem>
+                  <SelectItem value="occupied">Occupied</SelectItem>
+                  <SelectItem value="clean">Clean</SelectItem>
+                  <SelectItem value="dirty">Dirty</SelectItem>
+                  <SelectItem value="maintenance">Maintenance</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                placeholder="Add notes about the status change..."
+                value={statusNotes}
+                onChange={(e) => setStatusNotes(e.target.value)}
+                data-testid="input-status-notes"
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-40" data-testid="select-status-filter">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="occupied">Occupied</SelectItem>
-                <SelectItem value="available">Available</SelectItem>
-                <SelectItem value="clean">Clean</SelectItem>
-                <SelectItem value="dirty">Dirty</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-40" data-testid="select-type-filter">
-                <SelectValue placeholder="Room Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="Standard King">Standard King</SelectItem>
-                <SelectItem value="Standard Queen">Standard Queen</SelectItem>
-                <SelectItem value="Deluxe King">Deluxe King</SelectItem>
-                <SelectItem value="Deluxe Queen">Deluxe Queen</SelectItem>
-                <SelectItem value="Suite">Suite</SelectItem>
-                <SelectItem value="Executive Suite">Executive Suite</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
-        </CardContent>
-      </Card>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsStatusDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmStatusChange}
+              disabled={updateStatusMutation.isPending}
+              data-testid="button-confirm-status-change"
+            >
+              {updateStatusMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Update Status'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredRooms.map((room) => (
-          <RoomStatusCard
-            key={room.roomNumber}
-            {...room}
-            onStatusChange={(status) => console.log(`Room ${room.roomNumber} status changed to ${status}`)}
-            onViewDetails={() => console.log(`View room ${room.roomNumber} details`)}
-          />
-        ))}
-      </div>
-
-      {filteredRooms.length === 0 && (
-        <Card>
-          <CardContent className="text-center py-8">
-            <p className="text-muted-foreground">No rooms found matching your criteria.</p>
-          </CardContent>
-        </Card>
-      )}
+      <Dialog open={isRoomDetailsOpen} onOpenChange={setIsRoomDetailsOpen}>
+        <DialogContent className="max-w-md" data-testid="dialog-room-details">
+          <DialogHeader>
+            <DialogTitle>Room {selectedRoom?.roomNumber} Details</DialogTitle>
+          </DialogHeader>
+          {selectedRoom && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <Label className="text-muted-foreground">Room Type</Label>
+                  <p className="font-medium">{roomTypeMap.get(selectedRoom.roomTypeId)?.name || 'Unknown'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Floor</Label>
+                  <p className="font-medium">{selectedRoom.floor || 'N/A'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <Badge variant="outline" className="mt-1">{selectedRoom.status}</Badge>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Active</Label>
+                  <p className="font-medium">{selectedRoom.isActive ? 'Yes' : 'No'}</p>
+                </div>
+              </div>
+              {selectedRoom.notes && (
+                <div>
+                  <Label className="text-muted-foreground">Notes</Label>
+                  <p className="text-sm mt-1">{selectedRoom.notes}</p>
+                </div>
+              )}
+              {selectedRoom.lastCleaned && (
+                <div>
+                  <Label className="text-muted-foreground">Last Cleaned</Label>
+                  <p className="text-sm mt-1">
+                    {new Date(selectedRoom.lastCleaned).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                </div>
+              )}
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    setIsRoomDetailsOpen(false);
+                    setNewStatus(selectedRoom.status as RoomStatus);
+                    setIsStatusDialogOpen(true);
+                  }}
+                  data-testid="button-change-room-status"
+                >
+                  Change Status
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  data-testid="button-edit-room"
+                >
+                  Edit Room
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
