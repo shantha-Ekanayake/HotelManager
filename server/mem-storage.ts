@@ -390,9 +390,9 @@ class MemStorage implements IHMSStorage {
   }
 
   async getGuestsByProperty(propertyId: string): Promise<Guest[]> {
-    const reservations = Array.from(this.reservations.values()).filter(r => r.propertyId === propertyId);
-    const guestIds = new Set(reservations.map(r => r.guestId));
-    return Array.from(this.guests.values()).filter(g => guestIds.has(g.id));
+    // Guests are global entities - return all guests for any property
+    // This allows creating reservations for guests before they have any existing reservations
+    return Array.from(this.guests.values());
   }
 
   async getVIPGuests(propertyId: string): Promise<Guest[]> {
