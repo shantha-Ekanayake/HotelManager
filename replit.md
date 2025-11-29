@@ -4,6 +4,8 @@
 
 This is a comprehensive hotel management system built for modern hospitality operations. The system provides a web-based interface for managing reservations, guest services, room status, front desk operations, housekeeping, billing, and reporting. The application follows Material Design principles with custom adaptations for the hospitality industry, ensuring consistency, accessibility, and professional appearance suitable for enterprise use.
 
+**📋 Feature Tracking**: See [HMS_FEATURE_TRACKER.md](./HMS_FEATURE_TRACKER.md) for complete feature completion status, integration roadmap, and implementation timeline.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
