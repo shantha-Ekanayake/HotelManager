@@ -8,16 +8,16 @@
 
 ## 📊 Overall Progress Summary
 
-- **Core Modules**: 58% Complete (5.8/10)
+- **Core Modules**: 65% Complete (6.5/10)
 - **Advanced Features**: 5% Complete (1/20)
 - **Third-Party Integrations**: 0% Complete (0/10)
 - **Infrastructure**: 30% Complete (3/10)
 
 **Recent Updates** (November 29, 2025):
+- Front Desk Module: 85% → 95% (Added Walk-in, Room Transfer, No-Show, Express Checkout, Early/Late Management, Shift Reports)
 - Rooms Module: 30% → 100% (Complete Frontend UI: room status management, blocking, out-of-order maintenance)
-- Front Desk Module: 0% → 85% (Complete Check-in/Check-out workflows with deposits, payments, guest feedback, damage assessment)
-- Guest Services: New feature implemented (Service requests, priority management, status tracking)
-- Overall Progress: 35% → 48% → 58% (Core Modules advancing)
+- Guest Services: 100% Complete (Service requests, priority management, status tracking)
+- Overall Progress: 35% → 48% → 58% → 65% (Core Modules advancing rapidly)
 
 ---
 
@@ -62,7 +62,7 @@
 ---
 
 ### 3. Front Desk Module
-**Status**: ✅ **SUBSTANTIALLY COMPLETE** - 85% Complete
+**Status**: ✅ **SUBSTANTIALLY COMPLETE** - 95% Complete
 
 #### Check-In Functionality (90% Complete)
 - [x] Check-in workflow UI (CheckInForm component with guest info, room selection)
@@ -102,7 +102,7 @@
 - [ ] Guest satisfaction survey trigger
 - [ ] Checkout confirmation email
 
-#### Front Desk Overview & Operations (75% Complete)
+#### Front Desk Overview & Operations (95% Complete)
 - [x] Front Desk Overview Dashboard - Real-time statistics
 - [x] Today's arrivals list
 - [x] Today's departures list
@@ -111,15 +111,15 @@
 - [x] Occupancy rate calculation
 - [x] Statistics (total rooms, occupied, available, clean, dirty, maintenance)
 - [x] Guest Services request management panel
-- [ ] Walk-in guest registration (partial - create guest + immediate reservation)
-- [ ] Room transfers/moves
-- [ ] Early check-in/late checkout management
+- [x] Walk-in guest registration (WalkInDialog - create guest + immediate reservation + check-in)
+- [x] Room transfers/moves (RoomTransferDialog - transfer checked-in guests between rooms)
+- [x] Early check-in/late checkout management (StayAdjustmentDialog - with optional charges)
+- [x] Express check-out (ExpressCheckoutButton - zero-balance quick checkout)
+- [x] No-show processing (NoShowDialog - with optional fee charging)
+- [x] Front desk shift report (ShiftReportPanel - daily metrics with CSV export)
 - [ ] Key card re-issue
 - [ ] Upgrade/downgrade processing
 - [ ] Group check-in/check-out
-- [ ] Express check-out
-- [ ] No-show processing
-- [ ] Front desk shift report
 
 #### Guest Services Management (100% Complete)
 - [x] Service request creation with priority levels
@@ -141,9 +141,22 @@
 - [x] GET /api/reservations/:id - Single reservation details
 - [x] POST /api/reservations/:id/check-in - Process check-in with room assignment
 - [x] POST /api/reservations/:id/check-out - Process check-out with status finalization
+- [x] POST /api/front-desk/walk-in - Walk-in guest registration (creates guest + reservation + auto-check-in)
+- [x] POST /api/front-desk/reservations/:id/transfer - Room transfer/move for checked-in guests
+- [x] POST /api/reservations/:id/no-show - No-show processing with optional fee
+- [x] POST /api/reservations/:id/express-checkout - Express checkout (requires zero balance)
+- [x] PATCH /api/reservations/:id/stay-adjustment - Early check-in / late checkout management
+- [x] GET /api/front-desk/shift-report - Front desk shift report with daily metrics
 
 **Priority**: Critical  
-**Completed Workflows**: Check-in → Room assignment → Deposit collection; Check-out → Bill review → Payment settlement → Feedback collection  
+**Completed Workflows**: 
+- Check-in → Room assignment → Deposit collection
+- Check-out → Bill review → Payment settlement → Feedback collection
+- Walk-in → Guest creation → Reservation → Auto check-in → Deposit capture
+- Room Transfer → Status updates → Notes logging
+- No-Show → Fee charging → Status update
+- Express Checkout → Balance verification → Auto complete
+- Stay Adjustment → Early/Late management → Optional charges  
 **Dependencies**: Payment gateway integration (for Stripe), Housekeeping module (for automated notifications), Key card integration (for Tuya IoT locks)  
 **Last Updated**: November 29, 2025
 
