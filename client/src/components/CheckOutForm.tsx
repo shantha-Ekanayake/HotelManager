@@ -264,6 +264,38 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5" />
+            Payment Settlement
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {balance > 0 && (
+            <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+              <p className="text-sm font-medium text-destructive">
+                Outstanding Balance: ${balance.toFixed(2)}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Payment must be collected before guest departure
+              </p>
+            </div>
+          )}
+          
+          {balance <= 0 && (
+            <div className="p-4 rounded-lg bg-hotel-success/10 border border-hotel-success/20">
+              <p className="text-sm font-medium text-hotel-success">
+                Account Settled
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                All charges have been paid in full
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
             <Star className="h-5 w-5" />
             Guest Feedback
           </CardTitle>

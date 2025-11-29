@@ -28,7 +28,8 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
     specialRequests: "",
     arrivalTime: new Date().toTimeString().slice(0, 5),
     depositAmount: "100",
-    paymentMethod: "credit-card"
+    paymentMethod: "credit_card",
+    guestAgreement: false
   });
 
   const { data: reservation, isLoading: reservationLoading } = useQuery<{ reservation: Reservation }>({
@@ -224,6 +225,31 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
             )}
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="numberOfGuests">Number of Guests</Label>
+              <Input
+                id="numberOfGuests"
+                type="number"
+                min="1"
+                value={checkInDetails.numberOfGuests}
+                onChange={(e) => setCheckInDetails({...checkInDetails, numberOfGuests: e.target.value})}
+                data-testid="input-number-of-guests"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="keyCards">Key Cards</Label>
+              <Input
+                id="keyCards"
+                type="number"
+                min="1"
+                value={checkInDetails.keyCards}
+                onChange={(e) => setCheckInDetails({...checkInDetails, keyCards: e.target.value})}
+                data-testid="input-key-cards"
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="specialRequests">Special Requests</Label>
             <Textarea
@@ -234,6 +260,46 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
               rows={3}
               data-testid="textarea-special-requests"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5" />
+            Deposit & Payment
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="depositAmount">Deposit Amount ($)</Label>
+              <Input
+                id="depositAmount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={checkInDetails.depositAmount}
+                onChange={(e) => setCheckInDetails({...checkInDetails, depositAmount: e.target.value})}
+                data-testid="input-deposit-amount"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="paymentMethod">Payment Method</Label>
+              <Select value={checkInDetails.paymentMethod} onValueChange={(value) => setCheckInDetails({...checkInDetails, paymentMethod: value})}>
+                <SelectTrigger data-testid="select-payment-method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="credit_card">Credit Card</SelectItem>
+                  <SelectItem value="debit_card">Debit Card</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="check">Check</SelectItem>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -252,7 +318,8 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
               specialRequests: "",
               arrivalTime: new Date().toTimeString().slice(0, 5),
               depositAmount: "100",
-              paymentMethod: "credit-card"
+              paymentMethod: "credit_card",
+              guestAgreement: false
             });
           }}
           data-testid="button-clear-form"
