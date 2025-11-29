@@ -44,6 +44,12 @@ const addRatePlanSchema = z.object({
   cancellationPolicy: z.string().optional(),
 });
 
+const outOfOrderSchema = z.object({
+  reason: z.string().min(1, "Reason is required"),
+  estimatedCompletionDate: z.string().optional(),
+  notes: z.string().optional(),
+});
+
 interface RoomsResponse {
   rooms: Room[];
 }
@@ -159,6 +165,13 @@ export default function Rooms() {
   const [activeTab, setActiveTab] = useState("rooms");
   const [blockingRoomId, setBlockingRoomId] = useState<string | null>(null);
   const [blockingRoomBlocked, setBlockingRoomBlocked] = useState(false);
+  const [isOutOfOrderDialogOpen, setIsOutOfOrderDialogOpen] = useState(false);
+  const [outOfOrderRoomId, setOutOfOrderRoomId] = useState<string | null>(null);
+
+  const outOfOrderForm = useForm({
+    resolver: zodResolver(outOfOrderSchema),
+    defaultValues: { reason: "", estimatedCompletionDate: "", notes: "" },
+  });
 
   const roomForm = useForm({
     resolver: zodResolver(addRoomSchema),
@@ -291,6 +304,33 @@ export default function Rooms() {
         variant: "destructive",
         title: "Error",
         description: "Failed to update room blocking status",
+      });
+    },
+  });
+
+  const outOfOrderMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof outOfOrderSchema>) => {
+      return apiRequest('PATCH', `/api/rooms/${outOfOrderRoomId}/status`, { 
+        status: "maintenance",
+        notes: `Out of Order - ${data.reason}${data.estimatedCompletionDate ? ` (Est. completion: ${data.estimatedCompletionDate})` : ''}${data.notes ? ` - ${data.notes}` : ''}`
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rooms`] });
+      toast({
+        title: "Room marked as out-of-order",
+        description: `Room maintenance status updated`,
+      });
+      setIsOutOfOrderDialogOpen(false);
+      outOfOrderForm.reset();
+      setOutOfOrderRoomId(null);
+      setSelectedRoom(null);
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to mark room as out-of-order",
       });
     },
   });
@@ -785,6 +825,16 @@ export default function Rooms() {
                 <Button 
                   variant="outline"
                   onClick={() => {
+                    setOutOfOrderRoomId(selectedRoom.id);
+                    setIsOutOfOrderDialogOpen(true);
+                  }}
+                  data-testid="button-mark-out-of-order"
+                >
+                  Mark Out of Order
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
                     setBlockingRoomId(selectedRoom.id);
                     setBlockingRoomBlocked(!selectedRoom.isActive);
                     setIsBlockingRoomOpen(true);
@@ -981,6 +1031,98 @@ export default function Rooms() {
               {blockingRoomBlocked ? "Block Room" : "Unblock Room"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Out of Order Dialog */}
+      <Dialog open={isOutOfOrderDialogOpen} onOpenChange={setIsOutOfOrderDialogOpen}>
+        <DialogContent data-testid="dialog-out-of-order">
+          <DialogHeader>
+            <DialogTitle>Mark Room as Out of Order</DialogTitle>
+            <DialogDescription>
+              Room {selectedRoom?.roomNumber} will be marked for maintenance
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...outOfOrderForm}>
+            <form onSubmit={outOfOrderForm.handleSubmit((data) => outOfOrderMutation.mutate(data))} className="space-y-4">
+              <FormField control={outOfOrderForm.control} name="reason" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Reason for Maintenance *</FormLabel>
+                  <FormControl>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger data-testid="select-maintenance-reason">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="plumbing">Plumbing Issue</SelectItem>
+                        <SelectItem value="electrical">Electrical Issue</SelectItem>
+                        <SelectItem value="hvac">HVAC/Climate Control</SelectItem>
+                        <SelectItem value="furniture">Furniture Damage</SelectItem>
+                        <SelectItem value="deep-cleaning">Deep Cleaning Required</SelectItem>
+                        <SelectItem value="renovation">Renovation</SelectItem>
+                        <SelectItem value="carpet-cleaning">Carpet Cleaning</SelectItem>
+                        <SelectItem value="painting">Painting</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={outOfOrderForm.control} name="estimatedCompletionDate" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Estimated Completion Date</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="date" 
+                      {...field} 
+                      data-testid="input-completion-date"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={outOfOrderForm.control} name="notes" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Additional Notes</FormLabel>
+                  <FormControl>
+                    <Textarea 
+                      placeholder="Any additional details about the maintenance..." 
+                      {...field} 
+                      data-testid="textarea-maintenance-notes"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <DialogFooter>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    setIsOutOfOrderDialogOpen(false);
+                    outOfOrderForm.reset();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={outOfOrderMutation.isPending}
+                  data-testid="button-submit-out-of-order"
+                >
+                  {outOfOrderMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Mark Out of Order"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>
