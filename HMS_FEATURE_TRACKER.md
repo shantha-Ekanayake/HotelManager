@@ -8,10 +8,13 @@
 
 ## 📊 Overall Progress Summary
 
-- **Core Modules**: 20% Complete (2/10)
+- **Core Modules**: 25% Complete (2.5/10)
 - **Advanced Features**: 5% Complete (1/20)
 - **Third-Party Integrations**: 0% Complete (0/10)
 - **Infrastructure**: 30% Complete (3/10)
+
+**Recent Updates** (November 29, 2025):
+- Front Desk Module: 0% → 28% (Check-in/Check-out workflows, Backend APIs complete)
 
 ---
 
@@ -56,34 +59,34 @@
 ---
 
 ### 3. Front Desk Module
-**Status**: ❌ **PENDING** - 0% Complete
+**Status**: ⚠️ **PARTIAL** - 28% Complete
 
-#### Check-In Functionality
-- [ ] Check-in workflow UI
+#### Check-In Functionality (30% Complete)
+- [x] Check-in workflow UI (CheckInForm component with guest info, room selection)
 - [ ] Guest verification (ID scan/manual entry)
-- [ ] Room assignment (manual/automatic)
+- [x] Room assignment (manual) - User selects from available rooms dropdown
 - [ ] Payment collection/authorization
 - [ ] Key card assignment integration
 - [ ] Guest signature capture
 - [ ] Registration card printing
 - [ ] Welcome email automation
-- [ ] Room status update to "occupied"
-- [ ] Check-in confirmation notification
+- [x] Room status update to "occupied" - Automated on check-in
+- [ ] Check-in confirmation notification (email)
 
-#### Check-Out Functionality
-- [ ] Check-out workflow UI
-- [ ] Final bill review and approval
-- [ ] Payment settlement
+#### Check-Out Functionality (40% Complete)
+- [x] Check-out workflow UI (CheckOutForm component with folio display)
+- [x] Final bill review and approval - Shows charges, payments, balance
+- [ ] Payment settlement (real payment processing)
 - [ ] Late checkout handling
 - [ ] Deposit refund processing
-- [ ] Folio closing
-- [ ] Room status update to "dirty"
+- [x] Folio closing - Backend API implemented
+- [x] Room status update to "dirty" - Automated on check-out
 - [ ] Housekeeping notification
 - [ ] Guest satisfaction survey trigger
 - [ ] Checkout confirmation email
 
-#### Other Front Desk Operations
-- [ ] Walk-in guest registration
+#### Other Front Desk Operations (11% Complete)
+- [x] Walk-in guest registration (partial - create guest + immediate reservation)
 - [ ] Room transfers/moves
 - [ ] Early check-in/late checkout management
 - [ ] Key card re-issue
@@ -93,8 +96,20 @@
 - [ ] No-show processing
 - [ ] Front desk shift report
 
+#### Front Desk Backend APIs (100% Complete)
+- [x] GET /api/front-desk/overview - Dashboard stats (arrivals, departures, occupancy)
+- [x] GET /api/front-desk/arrivals-today - Today's expected arrivals
+- [x] GET /api/front-desk/departures-today - Today's expected departures
+- [x] GET /api/front-desk/current-guests - Currently checked-in guests
+- [x] GET /api/front-desk/available-rooms - Rooms available for check-in
+- [x] GET /api/front-desk/reservation/:id/folio - Reservation with folio for checkout
+- [x] GET /api/reservations/:id - Single reservation details
+- [x] POST /api/reservations/:id/check-in - Process check-in
+- [x] POST /api/reservations/:id/check-out - Process check-out
+
 **Priority**: Critical  
-**Dependencies**: Billing module, Housekeeping module, Key card integration
+**Dependencies**: Billing module (for payment processing), Housekeeping module (for notifications), Key card integration (for IoT locks)  
+**Last Updated**: November 29, 2025
 
 ---
 
