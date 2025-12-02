@@ -168,6 +168,12 @@ export const rooms = pgTable("rooms", {
   updatedAt: timestamp("updated_at").notNull().defaultNow()
 });
 
+// Guest loyalty tier enum
+export const guestLoyaltyTierEnum = pgEnum("guest_loyalty_tier", ["none", "bronze", "silver", "gold", "platinum"]);
+
+// Guest segment enum
+export const guestSegmentEnum = pgEnum("guest_segment", ["leisure", "business", "corporate", "group", "travel_agent", "ota"]);
+
 // Guests
 export const guests = pgTable("guests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -186,9 +192,27 @@ export const guests = pgTable("guests", {
   nationality: text("nationality"),
   preferences: json("preferences").$type<Record<string, any>>().default({}),
   vipStatus: boolean("vip_status").notNull().default(false),
+  blacklistStatus: boolean("blacklist_status").notNull().default(false),
+  blacklistReason: text("blacklist_reason"),
+  loyaltyTier: text("loyalty_tier").notNull().default("none"),
+  loyaltyPoints: integer("loyalty_points").notNull().default(0),
+  segment: text("segment").notNull().default("leisure"),
+  tags: json("tags").$type<string[]>().default([]),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow()
+});
+
+// Guest Communication Log
+export const guestCommunications = pgTable("guest_communications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  guestId: varchar("guest_id").notNull().references(() => guests.id),
+  type: text("type").notNull(), // email, phone, sms, in_person
+  direction: text("direction").notNull(), // inbound, outbound
+  subject: text("subject"),
+  content: text("content").notNull(),
+  staffId: varchar("staff_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow()
 });
 
 // Rate Plans
@@ -548,6 +572,11 @@ export const insertAnalyticsEventSchema = createInsertSchema(analyticsEvents).om
   createdAt: true
 });
 
+export const insertGuestCommunicationSchema = createInsertSchema(guestCommunications).omit({
+  id: true,
+  createdAt: true
+});
+
 // Type Exports
 export type InsertProperty = z.infer<typeof insertPropertySchema>;
 export type Property = typeof properties.$inferSelect;
@@ -599,3 +628,6 @@ export type ReportDefinition = typeof reportDefinitions.$inferSelect;
 
 export type InsertAnalyticsEvent = z.infer<typeof insertAnalyticsEventSchema>;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+
+export type InsertGuestCommunication = z.infer<typeof insertGuestCommunicationSchema>;
+export type GuestCommunication = typeof guestCommunications.$inferSelect;

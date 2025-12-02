@@ -550,24 +550,63 @@ export function registerGuestRoutes(app: Express) {
           return res.status(400).json({ error: "Search query required" });
         }
         
-        // Get all guests first, then filter by property through reservations
-        const allGuests = await storage.searchGuests(query as string);
-        
-        // Get property guests by checking their stay history  
-        const propertyGuests = [];
-        for (const guest of allGuests) {
-          const stayHistory = await storage.getGuestStayHistory(guest.id);
-          const hasPropertyStay = stayHistory.some(stay => 
-            stay.propertyId === req.user?.propertyId
-          );
-          if (hasPropertyStay) {
-            propertyGuests.push(guest);
-          }
-        }
-        
-        res.json({ guests: propertyGuests });
+        // Search all guests by name/email - returns all matching guests globally
+        const guests = await storage.searchGuests(query as string);
+        res.json({ guests });
       } catch (error) {
         console.error("Search guests error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get all guests with optional filters (must come before /:id route)
+  app.get("/api/guests/all",
+    authenticate,
+    authorize("guests.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { vipStatus, blacklistStatus, loyaltyTier, segment, tags } = req.query;
+        
+        const filters: any = {};
+        if (vipStatus !== undefined) filters.vipStatus = vipStatus === "true";
+        if (blacklistStatus !== undefined) filters.blacklistStatus = blacklistStatus === "true";
+        if (loyaltyTier) filters.loyaltyTier = loyaltyTier as string;
+        if (segment) filters.segment = segment as string;
+        if (tags) filters.tags = (tags as string).split(",");
+        
+        const guests = Object.keys(filters).length > 0 
+          ? await storage.getGuestsFiltered(filters)
+          : await storage.getAllGuests();
+          
+        res.json({ guests });
+      } catch (error) {
+        console.error("Get all guests error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Merge duplicate guests (must come before /:id route)
+  app.post("/api/guests/merge",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { primaryGuestId, duplicateGuestId } = req.body;
+        
+        if (!primaryGuestId || !duplicateGuestId) {
+          return res.status(400).json({ error: "Primary and duplicate guest IDs required" });
+        }
+        
+        if (primaryGuestId === duplicateGuestId) {
+          return res.status(400).json({ error: "Cannot merge guest with itself" });
+        }
+        
+        const mergedGuest = await storage.mergeGuests(primaryGuestId, duplicateGuestId);
+        res.json({ guest: mergedGuest, message: "Guests merged successfully" });
+      } catch (error) {
+        console.error("Merge guests error:", error);
         res.status(500).json({ error: "Internal server error" });
       }
     }
@@ -690,6 +729,172 @@ export function registerGuestRoutes(app: Express) {
       }
     }
   );
+
+  // Update guest loyalty tier and points
+  app.put("/api/guests/:id/loyalty",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { loyaltyTier, loyaltyPoints } = req.body;
+        
+        if (!loyaltyTier || !["none", "bronze", "silver", "gold", "platinum"].includes(loyaltyTier)) {
+          return res.status(400).json({ error: "Valid loyalty tier required" });
+        }
+        
+        const guest = await storage.updateGuestLoyalty(id, loyaltyTier, loyaltyPoints || 0);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest loyalty error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update guest blacklist status
+  app.put("/api/guests/:id/blacklist",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { blacklistStatus, blacklistReason } = req.body;
+        
+        if (typeof blacklistStatus !== "boolean") {
+          return res.status(400).json({ error: "Blacklist status must be boolean" });
+        }
+        
+        const guest = await storage.updateGuestBlacklist(id, blacklistStatus, blacklistReason);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest blacklist error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update guest tags
+  app.put("/api/guests/:id/tags",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { tags } = req.body;
+        
+        if (!Array.isArray(tags)) {
+          return res.status(400).json({ error: "Tags must be an array" });
+        }
+        
+        const guest = await storage.updateGuestTags(id, tags);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest tags error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update guest segment
+  app.put("/api/guests/:id/segment",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { segment } = req.body;
+        
+        if (!segment || !["leisure", "business", "corporate", "group", "travel_agent", "ota"].includes(segment)) {
+          return res.status(400).json({ error: "Valid segment required" });
+        }
+        
+        const guest = await storage.updateGuestSegment(id, segment);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest segment error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get guest communications
+  app.get("/api/guests/:id/communications",
+    authenticate,
+    authorize("guests.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const communications = await storage.getGuestCommunications(id);
+        res.json({ communications });
+      } catch (error) {
+        console.error("Get guest communications error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Add guest communication
+  app.post("/api/guests/:id/communications",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { type, direction, subject, content } = req.body;
+        
+        if (!type || !direction || !content) {
+          return res.status(400).json({ error: "Type, direction, and content are required" });
+        }
+        
+        const communication = await storage.createGuestCommunication({
+          guestId: id,
+          type,
+          direction,
+          subject: subject || null,
+          content,
+          staffId: req.user?.id || null
+        });
+        res.status(201).json({ communication });
+      } catch (error) {
+        console.error("Create guest communication error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Export guest data (GDPR)
+  app.get("/api/guests/:id/export",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const exportData = await storage.exportGuestData(id);
+        res.json(exportData);
+      } catch (error) {
+        console.error("Export guest data error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Delete guest data (GDPR - anonymize)
+  app.delete("/api/guests/:id",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        await storage.deleteGuest(id);
+        res.json({ success: true, message: "Guest data anonymized successfully" });
+      } catch (error) {
+        console.error("Delete guest error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
 }
 
 // Reservation Management Routes
@@ -1215,6 +1420,510 @@ function registerFrontDeskRoutes(app: Express) {
         });
       } catch (error) {
         console.error("Get reservation folio error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Walk-in guest registration (create guest + reservation + check-in)
+  const walkInSchema = z.object({
+    guest: z.object({
+      firstName: z.string().min(1, "First name required"),
+      lastName: z.string().min(1, "Last name required"),
+      email: z.string().email().optional().nullable(),
+      phone: z.string().optional().nullable(),
+      address: z.string().optional().nullable(),
+      city: z.string().optional().nullable(),
+      state: z.string().optional().nullable(),
+      country: z.string().optional().nullable(),
+      postalCode: z.string().optional().nullable(),
+      idType: z.string().optional().nullable(),
+      idNumber: z.string().optional().nullable(),
+      nationality: z.string().optional().nullable()
+    }),
+    roomId: z.string().min(1, "Room selection required"),
+    roomTypeId: z.string().optional().nullable(),
+    ratePlanId: z.string().optional().nullable(),
+    nights: z.coerce.number().min(1).default(1),
+    adults: z.coerce.number().min(1).default(1),
+    children: z.coerce.number().min(0).default(0),
+    specialRequests: z.string().optional().nullable(),
+    depositAmount: z.coerce.number().min(0).optional(),
+    paymentMethod: z.enum(["cash", "credit_card", "debit_card", "check", "bank_transfer"]).optional()
+  });
+
+  app.post("/api/front-desk/walk-in",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+
+        // Validate request body with Zod schema
+        const parseResult = walkInSchema.safeParse(req.body);
+        if (!parseResult.success) {
+          return res.status(400).json({ 
+            error: "Validation failed", 
+            details: parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+          });
+        }
+        const { guest, roomId, roomTypeId, ratePlanId, nights, adults, children, specialRequests, depositAmount, paymentMethod } = parseResult.data;
+
+        // Create guest
+        const newGuest = await storage.createGuest({
+          firstName: guest.firstName,
+          lastName: guest.lastName,
+          email: guest.email || null,
+          phone: guest.phone || null,
+          address: guest.address || null,
+          city: guest.city || null,
+          state: guest.state || null,
+          country: guest.country || null,
+          postalCode: guest.postalCode || null,
+          idType: guest.idType || null,
+          idNumber: guest.idNumber || null,
+          nationality: guest.nationality || null,
+          vipStatus: false,
+          notes: null,
+          dateOfBirth: null,
+          preferences: {}
+        });
+
+        // Get room type for pricing
+        const room = await storage.getRoom(roomId);
+        if (!room) {
+          return res.status(400).json({ error: "Room not found" });
+        }
+        const roomType = await storage.getRoomType(roomTypeId || room.roomTypeId);
+        const baseRate = roomType ? parseFloat(roomType.baseRate) : 100;
+        const totalAmount = (baseRate * (nights || 1)).toFixed(2);
+
+        const today = new Date();
+        const departureDate = new Date(today);
+        departureDate.setDate(departureDate.getDate() + (nights || 1));
+
+        // Create reservation (confirmationNumber is auto-generated by storage)
+        const reservation = await storage.createReservation({
+          propertyId,
+          guestId: newGuest.id,
+          roomTypeId: roomTypeId || room.roomTypeId,
+          ratePlanId: ratePlanId || "rp-standard",
+          roomId,
+          status: "checked_in",
+          arrivalDate: today,
+          departureDate,
+          nights: nights || 1,
+          adults: adults || 1,
+          children: children || 0,
+          totalAmount,
+          source: "walk_in",
+          specialRequests: specialRequests || null
+        });
+
+        // Update room status to occupied
+        await storage.updateRoom(roomId, { status: "occupied" });
+
+        // Create folio (folioNumber is auto-generated by storage)
+        const depositAmountNum = depositAmount ?? 0;
+        const folio = await storage.createFolio({
+          propertyId,
+          reservationId: reservation.id,
+          guestId: newGuest.id,
+          status: "open",
+          totalCharges: totalAmount,
+          totalPayments: depositAmountNum.toFixed(2),
+          balance: (parseFloat(totalAmount) - depositAmountNum).toFixed(2)
+        });
+
+        // Record deposit payment if provided
+        if (depositAmountNum > 0) {
+          await storage.createPayment({
+            folioId: folio.id,
+            amount: depositAmountNum.toFixed(2),
+            paymentMethod: paymentMethod || "cash",
+            status: "completed",
+            transactionId: `WALK-IN-DEPOSIT-${Date.now()}`,
+            postedBy: req.user?.id || null,
+            notes: "Walk-in deposit"
+          });
+        }
+
+        res.status(201).json({ 
+          success: true,
+          guest: newGuest, 
+          reservation, 
+          folio,
+          message: `Walk-in guest ${newGuest.firstName} ${newGuest.lastName} checked into room ${room.roomNumber}`
+        });
+      } catch (error) {
+        console.error("Walk-in registration error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Room transfer/move
+  app.post("/api/front-desk/reservations/:id/transfer",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { targetRoomId, reason } = req.body;
+
+        if (!targetRoomId) {
+          return res.status(400).json({ error: "Target room ID required" });
+        }
+
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+
+        if (reservation.status !== "checked_in") {
+          return res.status(400).json({ error: "Can only transfer checked-in reservations" });
+        }
+
+        const targetRoom = await storage.getRoom(targetRoomId);
+        if (!targetRoom) {
+          return res.status(404).json({ error: "Target room not found" });
+        }
+
+        // Check if target room is available
+        if (targetRoom.status === "occupied" || targetRoom.status === "out_of_order" || targetRoom.status === "maintenance") {
+          return res.status(400).json({ error: "Target room is not available" });
+        }
+
+        const sourceRoomId = reservation.roomId;
+
+        // Update reservation with new room
+        const updatedReservation = await storage.updateReservation(id, {
+          roomId: targetRoomId,
+          notes: reservation.notes ? `${reservation.notes}\nTransferred from room ${sourceRoomId}: ${reason || 'No reason provided'}` : `Transferred: ${reason || 'No reason provided'}`
+        } as any);
+
+        // Update room statuses
+        if (sourceRoomId) {
+          await storage.updateRoom(sourceRoomId, { status: "dirty" });
+        }
+        await storage.updateRoom(targetRoomId, { status: "occupied" });
+
+        res.json({ 
+          success: true,
+          reservation: updatedReservation,
+          message: `Guest transferred to room ${targetRoom.roomNumber}`
+        });
+      } catch (error) {
+        console.error("Room transfer error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // No-show processing
+  app.post("/api/reservations/:id/no-show",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { chargeNoShowFee, notes } = req.body;
+
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+
+        if (reservation.status !== "confirmed" && reservation.status !== "pending") {
+          return res.status(400).json({ error: "Can only mark confirmed or pending reservations as no-show" });
+        }
+
+        // Update reservation status to no_show
+        const updatedReservation = await storage.updateReservation(id, {
+          status: "no_show",
+          notes: notes ? `No-show: ${notes}` : "Marked as no-show"
+        } as any);
+
+        // Optionally charge no-show fee to folio
+        if (chargeNoShowFee) {
+          const folio = await storage.getFolioByReservation(id);
+          if (folio) {
+            const noShowFeeAmount = parseFloat(reservation.totalAmount) * 0.5; // 50% no-show fee
+            await storage.createCharge({
+              folioId: folio.id,
+              chargeCode: "NO_SHOW",
+              description: "No-show fee",
+              amount: noShowFeeAmount.toFixed(2),
+              totalAmount: noShowFeeAmount.toFixed(2),
+              taxAmount: "0",
+              postedBy: req.user?.id || null
+            });
+          }
+        }
+
+        res.json({ 
+          success: true,
+          reservation: updatedReservation,
+          message: "Reservation marked as no-show"
+        });
+      } catch (error) {
+        console.error("No-show processing error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Express checkout
+  app.post("/api/reservations/:id/express-checkout",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+
+        if (reservation.status !== "checked_in") {
+          return res.status(400).json({ error: "Can only express checkout checked-in reservations" });
+        }
+
+        // Check folio balance
+        const folio = await storage.getFolioByReservation(id);
+        if (folio) {
+          const balance = parseFloat(folio.balance || "0");
+          if (balance > 0) {
+            return res.status(400).json({ 
+              error: "Cannot express checkout with outstanding balance",
+              balance: balance.toFixed(2)
+            });
+          }
+
+          // Close the folio
+          await storage.updateFolio(folio.id, { status: "closed" });
+        }
+
+        // Update reservation status
+        const updatedReservation = await storage.updateReservation(id, {
+          status: "checked_out",
+          checkOutTime: new Date()
+        } as any);
+
+        // Update room status to dirty
+        if (reservation.roomId) {
+          await storage.updateRoom(reservation.roomId, { status: "dirty" });
+        }
+
+        res.json({ 
+          success: true,
+          reservation: updatedReservation,
+          message: "Express checkout completed successfully"
+        });
+      } catch (error) {
+        console.error("Express checkout error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Early check-in / Late check-out management
+  const stayAdjustmentSchema = z.object({
+    adjustmentType: z.enum(["early_checkin", "late_checkout"]),
+    newTime: z.string().optional().nullable(),
+    additionalCharge: z.coerce.number().min(0).optional(),
+    notes: z.string().optional().nullable()
+  });
+
+  app.patch("/api/reservations/:id/stay-adjustment",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        
+        // Validate request body with Zod schema
+        const parseResult = stayAdjustmentSchema.safeParse(req.body);
+        if (!parseResult.success) {
+          return res.status(400).json({ 
+            error: "Validation failed", 
+            details: parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+          });
+        }
+        const { adjustmentType, newTime, additionalCharge, notes } = parseResult.data;
+
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+
+        let updateData: any = {};
+        let chargeDescription = "";
+
+        if (adjustmentType === "early_checkin") {
+          if (reservation.status !== "confirmed" && reservation.status !== "pending") {
+            return res.status(400).json({ error: "Can only set early check-in for confirmed reservations" });
+          }
+          updateData.earlyCheckIn = true;
+          updateData.notes = notes || "Early check-in approved";
+          chargeDescription = "Early check-in fee";
+        } else if (adjustmentType === "late_checkout") {
+          if (reservation.status !== "checked_in") {
+            return res.status(400).json({ error: "Can only set late checkout for checked-in guests" });
+          }
+          updateData.lateCheckOut = true;
+          if (newTime) {
+            updateData.departureDate = new Date(newTime);
+          }
+          updateData.notes = notes || "Late checkout approved";
+          chargeDescription = "Late checkout fee";
+        } else {
+          return res.status(400).json({ error: "Invalid adjustment type. Use 'early_checkin' or 'late_checkout'" });
+        }
+
+        const updatedReservation = await storage.updateReservation(id, updateData);
+
+        // Add charge if applicable
+        if (additionalCharge && additionalCharge > 0) {
+          const folio = await storage.getFolioByReservation(id);
+          if (folio) {
+            await storage.createCharge({
+              folioId: folio.id,
+              chargeCode: adjustmentType === "early_checkin" ? "EARLY_CHECKIN" : "LATE_CHECKOUT",
+              description: chargeDescription,
+              amount: additionalCharge.toFixed(2),
+              totalAmount: additionalCharge.toFixed(2),
+              taxAmount: "0",
+              postedBy: req.user?.id || null
+            });
+          }
+        }
+
+        res.json({ 
+          success: true,
+          reservation: updatedReservation,
+          message: `${adjustmentType === "early_checkin" ? "Early check-in" : "Late checkout"} approved`
+        });
+      } catch (error) {
+        console.error("Stay adjustment error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Front desk shift report
+  app.get("/api/front-desk/shift-report",
+    authenticate,
+    authorize("front_desk.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const propertyId = req.user?.propertyId;
+        if (!propertyId) {
+          return res.status(400).json({ error: "User property ID not found" });
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        // Get all reservations for property
+        const allReservations = await storage.getReservationsByProperty(propertyId);
+        
+        // Filter for today's activities
+        const todayCheckIns = allReservations.filter(r => {
+          if (!r.checkInTime) return false;
+          const checkInDate = new Date(r.checkInTime);
+          return checkInDate >= today && checkInDate < tomorrow;
+        });
+
+        const todayCheckOuts = allReservations.filter(r => {
+          if (!r.checkOutTime) return false;
+          const checkOutDate = new Date(r.checkOutTime);
+          return checkOutDate >= today && checkOutDate < tomorrow;
+        });
+
+        const noShows = allReservations.filter(r => {
+          if (r.status !== "no_show") return false;
+          const arrivalDate = new Date(r.arrivalDate);
+          return arrivalDate >= today && arrivalDate < tomorrow;
+        });
+
+        // Get current occupancy
+        const rooms = await storage.getRoomsByProperty(propertyId);
+        const occupiedRooms = rooms.filter(r => r.status === "occupied").length;
+        const totalRooms = rooms.length;
+        const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
+
+        // Calculate today's revenue (from payments)
+        let todayRevenue = 0;
+        for (const reservation of [...todayCheckIns, ...todayCheckOuts]) {
+          const folio = await storage.getFolioByReservation(reservation.id);
+          if (folio) {
+            const payments = await storage.getPaymentsByFolio(folio.id);
+            for (const payment of payments) {
+              const paymentDate = new Date(payment.createdAt);
+              if (paymentDate >= today && paymentDate < tomorrow && payment.status === "completed") {
+                todayRevenue += parseFloat(payment.amount);
+              }
+            }
+          }
+        }
+
+        // Get pending arrivals
+        const pendingArrivals = allReservations.filter(r => {
+          if (r.status !== "confirmed" && r.status !== "pending") return false;
+          const arrivalDate = new Date(r.arrivalDate);
+          return arrivalDate >= today && arrivalDate < tomorrow;
+        });
+
+        // Room status breakdown
+        const roomStatusBreakdown = {
+          clean: rooms.filter(r => r.status === "clean").length,
+          dirty: rooms.filter(r => r.status === "dirty").length,
+          occupied: occupiedRooms,
+          maintenance: rooms.filter(r => r.status === "maintenance" || r.status === "out_of_order").length,
+          available: rooms.filter(r => r.status === "available" || r.status === "clean" || r.status === "inspected").length
+        };
+
+        const shiftReport = {
+          reportDate: today.toISOString(),
+          generatedAt: new Date().toISOString(),
+          generatedBy: req.user?.username || "Unknown",
+          summary: {
+            checkInsCompleted: todayCheckIns.length,
+            checkOutsCompleted: todayCheckOuts.length,
+            pendingArrivals: pendingArrivals.length,
+            noShows: noShows.length,
+            currentOccupancy: occupancyRate,
+            occupiedRooms,
+            totalRooms,
+            todayRevenue: todayRevenue.toFixed(2)
+          },
+          roomStatus: roomStatusBreakdown,
+          checkIns: todayCheckIns.map(r => ({
+            confirmationNumber: r.confirmationNumber,
+            roomId: r.roomId,
+            checkInTime: r.checkInTime
+          })),
+          checkOuts: todayCheckOuts.map(r => ({
+            confirmationNumber: r.confirmationNumber,
+            roomId: r.roomId,
+            checkOutTime: r.checkOutTime
+          })),
+          pendingArrivalsDetails: pendingArrivals.map(r => ({
+            confirmationNumber: r.confirmationNumber,
+            status: r.status
+          }))
+        };
+
+        res.json({ report: shiftReport });
+      } catch (error) {
+        console.error("Shift report error:", error);
         res.status(500).json({ error: "Internal server error" });
       }
     }
