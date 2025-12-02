@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { Bed, Users, Wifi, Car, Coffee, ChevronDown, Eye, Wrench, Sparkles, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 
-export type RoomStatus = "clean" | "dirty" | "maintenance" | "occupied" | "available";
+export type RoomStatus = "clean" | "dirty" | "maintenance" | "occupied" | "available" | "inspected" | "out_of_order";
 
 interface RoomStatusCardProps {
   roomNumber: string;
@@ -18,12 +18,14 @@ interface RoomStatusCardProps {
   onViewDetails?: () => void;
 }
 
-const statusConfig = {
-  clean: { color: "bg-hotel-success", text: "Clean", variant: "default" as const, icon: Sparkles },
-  dirty: { color: "bg-hotel-warning", text: "Dirty", variant: "secondary" as const, icon: AlertTriangle },
-  maintenance: { color: "bg-hotel-error", text: "Maintenance", variant: "destructive" as const, icon: Wrench },
-  occupied: { color: "bg-primary", text: "Occupied", variant: "default" as const, icon: Users },
-  available: { color: "bg-hotel-success", text: "Available", variant: "outline" as const, icon: CheckCircle },
+const statusConfig: Record<RoomStatus, { color: string; text: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof Sparkles }> = {
+  clean: { color: "bg-hotel-success", text: "Clean", variant: "default", icon: Sparkles },
+  dirty: { color: "bg-hotel-warning", text: "Dirty", variant: "secondary", icon: AlertTriangle },
+  maintenance: { color: "bg-hotel-error", text: "Maintenance", variant: "destructive", icon: Wrench },
+  occupied: { color: "bg-primary", text: "Occupied", variant: "default", icon: Users },
+  available: { color: "bg-hotel-success", text: "Available", variant: "outline", icon: CheckCircle },
+  inspected: { color: "bg-hotel-success", text: "Inspected", variant: "default", icon: CheckCircle },
+  out_of_order: { color: "bg-hotel-error", text: "Out of Order", variant: "destructive", icon: XCircle },
 };
 
 const amenityIcons: Record<string, typeof Wifi> = {
@@ -48,7 +50,7 @@ export default function RoomStatusCard({
   onStatusChange,
   onViewDetails
 }: RoomStatusCardProps) {
-  const statusInfo = statusConfig[status];
+  const statusInfo = statusConfig[status] || statusConfig.available;
   const StatusIcon = statusInfo.icon;
 
   const getAvailableStatuses = (): RoomStatus[] => {
