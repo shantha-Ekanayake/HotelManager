@@ -177,3 +177,43 @@ All queries use the shared `queryFn` from queryClient.ts which automatically:
 - Throws proper error messages for failed requests
 
 Example: `useQuery({ queryKey: ['/api/properties/prop-demo/rooms'] })`
+
+## Guests Module Implementation (November 2025)
+
+### Frontend Features (Guests.tsx)
+- **Guest Directory**: Responsive grid displaying all guests with search and filtering
+- **Statistics Cards**: Total guests, VIP count, Gold/Platinum tier, Blacklisted count
+- **Search**: Real-time search by name or email (GET /api/guests/search)
+- **Filtering**: Filter by VIP status, blacklist status, loyalty tier, segment, tags
+- **Guest Profile Panel**: Tabbed interface with Profile, Loyalty, History, Communications, Preferences
+- **Loyalty Management**: Update tier (None/Bronze/Silver/Gold/Platinum) and points
+- **Tags System**: Add/remove guest tags with visual chips
+- **Blacklist Management**: Toggle blacklist status with reason tracking
+- **Segment Management**: Assign guest segment (Business/Leisure/Corporate/Group)
+- **GDPR Compliance**: Export guest data (JSON) and anonymize/delete guest
+- **Guest Merge**: Merge duplicate guest profiles
+
+### Backend APIs (hms-routes.ts)
+- GET /api/guests - Property-scoped guests
+- GET /api/guests/all - All guests with optional filters (vipStatus, blacklistStatus, loyaltyTier, segment, tags)
+- GET /api/guests/search?query= - Search guests by name/email (returns all matching globally)
+- GET /api/guests/:id - Single guest profile
+- POST /api/guests - Create new guest
+- PUT /api/guests/:id - Update guest details
+- PUT /api/guests/:id/loyalty - Update loyalty tier and points
+- PUT /api/guests/:id/blacklist - Update blacklist status with reason
+- PUT /api/guests/:id/tags - Update guest tags array
+- PUT /api/guests/:id/segment - Update guest segment
+- GET /api/guests/:id/communications - Get communication log
+- POST /api/guests/:id/communications - Add communication entry
+- GET /api/guests/:id/export - GDPR data export (all guest data as JSON)
+- DELETE /api/guests/:id - GDPR anonymization (replaces PII with "DELETED")
+- POST /api/guests/merge - Merge duplicate guests (primary keeps data, secondary deleted)
+
+### Route Ordering Fix
+- Critical: Specific routes (/api/guests/all, /api/guests/search, /api/guests/merge) must come BEFORE parameterized route (/api/guests/:id)
+- Express matches routes in order; parameterized routes would incorrectly capture "all", "search", "merge" as IDs
+
+### Cache Invalidation Pattern
+- After mutations, invalidate cache with exact query keys: `queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] })`
+- Use array format for consistent cache segment management
