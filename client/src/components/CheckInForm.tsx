@@ -48,10 +48,7 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
 
   const checkInMutation = useMutation({
     mutationFn: async (data: { roomId: string }) => {
-      return await apiRequest(`/api/reservations/${reservationId}/check-in`, {
-        method: "POST",
-        body: JSON.stringify(data)
-      });
+      return await apiRequest("POST", `/api/reservations/${reservationId}/check-in`, data);
     },
     onSuccess: () => {
       toast({

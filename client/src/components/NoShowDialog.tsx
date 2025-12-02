@@ -27,10 +27,7 @@ export default function NoShowDialog({
 
   const noShowMutation = useMutation({
     mutationFn: async (data: { chargeNoShowFee: boolean; notes: string }) => {
-      return await apiRequest(`/api/reservations/${reservationId}/no-show`, {
-        method: "POST",
-        body: JSON.stringify(data)
-      });
+      return await apiRequest("POST", `/api/reservations/${reservationId}/no-show`, data);
     },
     onSuccess: (data: any) => {
       toast({

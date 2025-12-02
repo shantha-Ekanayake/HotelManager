@@ -31,10 +31,7 @@ export default function StayAdjustmentDialog({
 
   const adjustmentMutation = useMutation({
     mutationFn: async (data: { adjustmentType: string; additionalCharge: string; notes: string }) => {
-      return await apiRequest(`/api/reservations/${reservationId}/stay-adjustment`, {
-        method: "PATCH",
-        body: JSON.stringify(data)
-      });
+      return await apiRequest("PATCH", `/api/reservations/${reservationId}/stay-adjustment`, data);
     },
     onSuccess: (data: any) => {
       toast({
