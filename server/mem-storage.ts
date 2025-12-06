@@ -7,7 +7,7 @@ import type {
   RatePlan, InsertRatePlan, DailyRate, InsertDailyRate,
   DailyMetric, InsertDailyMetric, GuestSatisfaction, InsertGuestSatisfaction,
   ReportDefinition, InsertReportDefinition, AnalyticsEvent, InsertAnalyticsEvent,
-  GuestCommunication, InsertGuestCommunication
+  GuestCommunication, InsertGuestCommunication, SystemSetting, InsertSystemSetting
 } from "@shared/schema";
 import type { IHMSStorage } from "./database-storage";
 
@@ -34,6 +34,7 @@ class MemStorage implements IHMSStorage {
   private guestSatisfaction: Map<string, GuestSatisfaction> = new Map();
   private reportDefinitions: Map<string, ReportDefinition> = new Map();
   private analyticsEvents: Map<string, AnalyticsEvent> = new Map();
+  private systemSettings: Map<string, SystemSetting> = new Map();
 
   constructor() {
     this.seedDemoData();
@@ -109,6 +110,20 @@ class MemStorage implements IHMSStorage {
       }
     ];
     users.forEach(user => this.users.set(user.id, user));
+
+    // Initialize system settings
+    const systemSettings: SystemSetting[] = [
+      {
+        id: "setting-offline",
+        propertyId: property.id,
+        key: "offline_mode_enabled",
+        value: "false",
+        description: "Enable offline mode for the hotel management system",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+    systemSettings.forEach(setting => this.systemSettings.set(`${setting.propertyId}-${setting.key}`, setting));
 
     // Create room types
     const roomTypes: RoomType[] = [
@@ -1332,6 +1347,30 @@ class MemStorage implements IHMSStorage {
       todayDepartures: 0,
       totalRevenue: 0
     };
+  }
+
+  // System Settings
+  async getSettings(propertyId: string): Promise<SystemSetting[]> {
+    return Array.from(this.systemSettings.values()).filter(s => s.propertyId === propertyId);
+  }
+
+  async getSetting(propertyId: string, key: string): Promise<SystemSetting | undefined> {
+    return this.systemSettings.get(`${propertyId}-${key}`);
+  }
+
+  async updateSetting(propertyId: string, key: string, value: string): Promise<SystemSetting> {
+    const existing = this.systemSettings.get(`${propertyId}-${key}`);
+    const setting: SystemSetting = {
+      id: existing?.id || generateId(),
+      propertyId,
+      key,
+      value,
+      description: existing?.description,
+      createdAt: existing?.createdAt || new Date(),
+      updatedAt: new Date()
+    };
+    this.systemSettings.set(`${propertyId}-${key}`, setting);
+    return setting;
   }
 }
 
