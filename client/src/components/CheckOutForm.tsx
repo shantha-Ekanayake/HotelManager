@@ -47,9 +47,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
 
   const checkOutMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/reservations/${reservationId}/check-out`, {
-        method: "POST"
-      });
+      return await apiRequest("POST", `/api/reservations/${reservationId}/check-out`);
     },
     onSuccess: () => {
       toast({

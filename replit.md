@@ -159,7 +159,15 @@ The application is organized into core hotel management modules:
 - **Statistics Dashboard**: Total rooms, occupied, available, clean, dirty, maintenance counts
 - **Search & Filtering**: Filter rooms by status, room type, and room number
 
+### Room Creation (December 2025)
+- **Add Room Dialog**: Modal form for creating new rooms
+- **Role-Based Access**: Only hotel_manager and admin roles can create rooms
+- **Room Statuses**: All status types supported (available, occupied, dirty, clean, inspected, out_of_order, maintenance)
+- **Floor Validation**: String input coerced to number for backend schema
+- **RoomStatusCard**: Fallback handling for unknown status values prevents crashes
+
 ### Backend APIs (hms-routes.ts)
+- POST /api/properties/:propertyId/rooms - Create room (requires rooms.manage permission)
 - GET /api/properties/:propertyId/rooms - Fetch all rooms for a property
 - GET /api/properties/:propertyId/room-types - Fetch room types with pricing
 - GET /api/properties/:propertyId/rate-plans - Fetch rate plans with policies
@@ -169,6 +177,11 @@ The application is organized into core hotel management modules:
 - PUT /api/rooms/:id - Update room details
 - PUT /api/room-types/:id - Update room type
 - PUT /api/rate-plans/:id - Update rate plan
+
+### Authorization Permissions
+- **hotel_manager**: rooms.manage, rooms.view, properties.view, reservations.manage, guests.manage
+- **admin**: All permissions including rooms.manage
+- **front_desk_staff**: rooms.view, rooms.status.update (can see rooms and update status, but NOT create)
 
 ### Query Pattern
 All queries use the shared `queryFn` from queryClient.ts which automatically:
