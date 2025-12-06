@@ -51,7 +51,8 @@ import {
   dailyMetrics,
   guestSatisfaction,
   reportDefinitions,
-  analyticsEvents
+  analyticsEvents,
+  guestCommunications
 } from "@shared/schema";
 
 export interface IHMSStorage {
@@ -105,6 +106,13 @@ export interface IHMSStorage {
   exportGuestData(guestId: string): Promise<any>;
   mergeGuests(primaryGuestId: string, duplicateGuestId: string): Promise<Guest>;
   anonymizeGuest(guestId: string): Promise<Guest>;
+  updateGuestLoyalty(guestId: string, loyaltyTier: string, loyaltyPoints: number): Promise<Guest>;
+  updateGuestBlacklist(guestId: string, blacklistStatus: boolean, blacklistReason?: string): Promise<Guest>;
+  updateGuestTags(guestId: string, tags: string[]): Promise<Guest>;
+  updateGuestSegment(guestId: string, segment: string): Promise<Guest>;
+  deleteGuest(guestId: string): Promise<boolean>;
+  getGuestCommunications(guestId: string): Promise<any[]>;
+  createGuestCommunication(communication: any): Promise<any>;
   
   // Rate Plan Management
   getRatePlan(id: string): Promise<RatePlan | undefined>;
@@ -439,40 +447,23 @@ export class DatabaseStorage implements IHMSStorage {
   }
 
   async getGuestsByProperty(propertyId: string): Promise<Guest[]> {
-    // Get guests who have reservations at this property
-    const guestsWithReservations = await db.selectDistinct({ 
-      id: guests.id,
-      firstName: guests.firstName,
-      lastName: guests.lastName,
-      email: guests.email,
-      phone: guests.phone,
-      address: guests.address,
-      city: guests.city,
-      state: guests.state,
-      country: guests.country,
-      postalCode: guests.postalCode,
-      dateOfBirth: guests.dateOfBirth,
-      idType: guests.idType,
-      idNumber: guests.idNumber,
-      nationality: guests.nationality,
-      preferences: guests.preferences,
-      vipStatus: guests.vipStatus,
-      blacklistStatus: guests.blacklistStatus,
-      blacklistReason: guests.blacklistReason,
-      loyaltyTier: guests.loyaltyTier,
-      loyaltyPoints: guests.loyaltyPoints,
-      segment: guests.segment,
-      tags: guests.tags,
-      notes: guests.notes,
-      createdAt: guests.createdAt,
-      updatedAt: guests.updatedAt
+    // Get guest IDs who have reservations at this property, then fetch full guest data
+    const guestIdsResult = await db.selectDistinct({ 
+      guestId: reservations.guestId
     })
-    .from(guests)
-    .innerJoin(reservations, eq(reservations.guestId, guests.id))
-    .where(eq(reservations.propertyId, propertyId))
-    .orderBy(desc(guests.createdAt));
+    .from(reservations)
+    .where(eq(reservations.propertyId, propertyId));
     
-    return guestsWithReservations;
+    const guestIds = guestIdsResult.map(r => r.guestId);
+    
+    if (guestIds.length === 0) {
+      return [];
+    }
+    
+    // Fetch full guest data for these IDs
+    return await db.select().from(guests)
+      .where(inArray(guests.id, guestIds))
+      .orderBy(desc(guests.createdAt));
   }
 
   async getAllGuests(): Promise<Guest[]> {
@@ -480,7 +471,6 @@ export class DatabaseStorage implements IHMSStorage {
   }
 
   async getGuestsFiltered(filters: Record<string, any>): Promise<Guest[]> {
-    let query = db.select().from(guests);
     const conditions = [];
 
     if (filters.vipStatus !== undefined) {
@@ -497,50 +487,87 @@ export class DatabaseStorage implements IHMSStorage {
     }
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      return await db.select().from(guests)
+        .where(and(...conditions))
+        .orderBy(desc(guests.createdAt));
     }
 
-    return await query.orderBy(desc(guests.createdAt));
+    return await db.select().from(guests).orderBy(desc(guests.createdAt));
   }
 
   async getVIPGuests(propertyId: string): Promise<Guest[]> {
-    // Get VIP guests who have reservations at this property
-    const vipGuests = await db.selectDistinct({ 
-      id: guests.id,
-      firstName: guests.firstName,
-      lastName: guests.lastName,
-      email: guests.email,
-      phone: guests.phone,
-      address: guests.address,
-      city: guests.city,
-      state: guests.state,
-      country: guests.country,
-      postalCode: guests.postalCode,
-      dateOfBirth: guests.dateOfBirth,
-      idType: guests.idType,
-      idNumber: guests.idNumber,
-      nationality: guests.nationality,
-      preferences: guests.preferences,
-      vipStatus: guests.vipStatus,
-      blacklistStatus: guests.blacklistStatus,
-      blacklistReason: guests.blacklistReason,
-      loyaltyTier: guests.loyaltyTier,
-      loyaltyPoints: guests.loyaltyPoints,
-      segment: guests.segment,
-      tags: guests.tags,
-      notes: guests.notes,
-      createdAt: guests.createdAt,
-      updatedAt: guests.updatedAt
+    // Get VIP guest IDs who have reservations at this property
+    const guestIdsResult = await db.selectDistinct({ 
+      guestId: reservations.guestId
     })
-    .from(guests)
-    .innerJoin(reservations, eq(reservations.guestId, guests.id))
+    .from(reservations)
+    .innerJoin(guests, eq(guests.id, reservations.guestId))
     .where(and(
       eq(reservations.propertyId, propertyId),
       eq(guests.vipStatus, true)
-    ))
-    .orderBy(desc(guests.createdAt));
+    ));
     
-    return vipGuests;
+    const guestIds = guestIdsResult.map(r => r.guestId);
+    
+    if (guestIds.length === 0) {
+      return [];
+    }
+    
+    return await db.select().from(guests)
+      .where(inArray(guests.id, guestIds))
+      .orderBy(desc(guests.createdAt));
+  }
+
+  // Guest CRM Update Methods
+  async updateGuestLoyalty(guestId: string, loyaltyTier: string, loyaltyPoints: number): Promise<Guest> {
+    const result = await db.update(guests).set({
+      loyaltyTier,
+      loyaltyPoints,
+      updatedAt: new Date()
+    }).where(eq(guests.id, guestId)).returning();
+    return result[0];
+  }
+
+  async updateGuestBlacklist(guestId: string, blacklistStatus: boolean, blacklistReason?: string): Promise<Guest> {
+    const result = await db.update(guests).set({
+      blacklistStatus,
+      blacklistReason: blacklistReason || null,
+      updatedAt: new Date()
+    }).where(eq(guests.id, guestId)).returning();
+    return result[0];
+  }
+
+  async updateGuestTags(guestId: string, tags: string[]): Promise<Guest> {
+    const result = await db.update(guests).set({
+      tags,
+      updatedAt: new Date()
+    }).where(eq(guests.id, guestId)).returning();
+    return result[0];
+  }
+
+  async updateGuestSegment(guestId: string, segment: string): Promise<Guest> {
+    const result = await db.update(guests).set({
+      segment,
+      updatedAt: new Date()
+    }).where(eq(guests.id, guestId)).returning();
+    return result[0];
+  }
+
+  async deleteGuest(guestId: string): Promise<boolean> {
+    await db.delete(guests).where(eq(guests.id, guestId));
+    return true;
+  }
+
+  // Guest Communications
+  async getGuestCommunications(guestId: string): Promise<any[]> {
+    return await db.select().from(guestCommunications)
+      .where(eq(guestCommunications.guestId, guestId))
+      .orderBy(desc(guestCommunications.createdAt));
+  }
+
+  async createGuestCommunication(communication: any): Promise<any> {
+    const result = await db.insert(guestCommunications).values(communication).returning();
+    return result[0];
   }
 
   async updateGuestPreferences(guestId: string, preferences: Record<string, any>): Promise<Guest> {

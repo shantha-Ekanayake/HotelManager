@@ -483,10 +483,15 @@ export function registerRoomRoutes(app: Express) {
         const { id } = req.params;
         const { isActive, notes, status } = req.body;
         
-        const updateData: { isActive?: boolean; notes?: string; status?: string } = {};
+        const validStatuses = ["available", "occupied", "clean", "dirty", "inspected", "out_of_order", "maintenance"] as const;
+        type RoomStatus = typeof validStatuses[number];
+        
+        const updateData: { isActive?: boolean; notes?: string; status?: RoomStatus } = {};
         if (typeof isActive === 'boolean') updateData.isActive = isActive;
         if (notes !== undefined) updateData.notes = notes;
-        if (status) updateData.status = status;
+        if (status && validStatuses.includes(status)) {
+          updateData.status = status as RoomStatus;
+        }
         
         const room = await storage.updateRoom(id, updateData);
         res.json({ room });
@@ -3231,10 +3236,16 @@ export function registerFinancialReportingRoutes(app: Express) {
         // Get financial overview data
         const overview = await storage.getFolioSummaryReport(propertyId, from, to);
         
+        // Use totalCharges as revenue and totalPayments as collected revenue
+        const totalRevenue = overview.totalCharges || 0;
+        const totalExpenses = 0; // Expenses would come from a separate expense tracking system
+        
         res.json({
-          totalRevenue: overview.totalRevenue || 0,
-          totalExpenses: overview.totalExpenses || 0,
-          netProfit: (overview.totalRevenue || 0) - (overview.totalExpenses || 0)
+          totalRevenue,
+          totalExpenses,
+          netProfit: totalRevenue - totalExpenses,
+          totalPayments: overview.totalPayments || 0,
+          outstandingBalance: overview.outstandingBalance || 0
         });
       } catch (error) {
         console.error("Get financial overview error:", error);
@@ -3265,7 +3276,14 @@ export function registerFinancialReportingRoutes(app: Express) {
         const { fromDate: from, toDate: to } = normalizeDateRange(fromDateStr, toDateStr);
         
         const report = await storage.getChargesAnalysisReport(propertyId, from, to);
-        const revenueCharges = report.filter(charge => parseFloat(charge.amount) > 0);
+        
+        // Transform chargesByCode object into array format expected by frontend
+        const revenueCharges = Object.entries(report.chargesByCode || {}).map(([code, data]) => ({
+          code,
+          description: data.description,
+          amount: data.amount,
+          count: data.count
+        })).filter(charge => charge.amount > 0);
         
         res.json(revenueCharges);
       } catch (error) {
@@ -3297,7 +3315,14 @@ export function registerFinancialReportingRoutes(app: Express) {
         const { fromDate: from, toDate: to } = normalizeDateRange(fromDateStr, toDateStr);
         
         const report = await storage.getChargesAnalysisReport(propertyId, from, to);
-        const expenseCharges = report.filter(charge => parseFloat(charge.amount) < 0);
+        
+        // Transform chargesByCode object into array format - filter for negative amounts (refunds/adjustments)
+        const expenseCharges = Object.entries(report.chargesByCode || {}).map(([code, data]) => ({
+          code,
+          description: data.description,
+          amount: data.amount,
+          count: data.count
+        })).filter(charge => charge.amount < 0);
         
         res.json(expenseCharges);
       } catch (error) {
