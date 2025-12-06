@@ -16,7 +16,6 @@ import Guests from "@/pages/Guests";
 import Billing from "@/pages/Billing";
 import Housekeeping from "@/pages/Housekeeping";
 import FinancialReports from "@/pages/FinancialReports";
-import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
 
@@ -48,7 +47,6 @@ function Router() {
       <Route path="/housekeeping" component={Housekeeping} />
       <Route path="/billing" component={Billing} />
       <Route path="/reports" component={FinancialReports} />
-      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

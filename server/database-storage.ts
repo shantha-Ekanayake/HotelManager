@@ -224,11 +224,6 @@ export interface IHMSStorage {
   createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent>;
   getAnalyticsEvents(propertyId: string, fromDate?: Date, toDate?: Date, eventCategory?: string): Promise<AnalyticsEvent[]>;
   
-  // System Settings
-  getSettings(propertyId: string): Promise<SystemSetting[]>;
-  getSetting(propertyId: string, key: string): Promise<SystemSetting | undefined>;
-  updateSetting(propertyId: string, key: string, value: string): Promise<SystemSetting>;
-  
   // Comprehensive Reporting Methods
   getOccupancyReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
     date: Date;
