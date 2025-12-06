@@ -92,6 +92,8 @@ export interface IHMSStorage {
   getGuestStayHistory(guestId: string): Promise<Reservation[]>;
   getGuestsByProperty(propertyId: string): Promise<Guest[]>;
   getVIPGuests(propertyId: string): Promise<Guest[]>;
+  getAllGuests(): Promise<Guest[]>;
+  getGuestsFiltered(filters: Record<string, any>): Promise<Guest[]>;
   updateGuestPreferences(guestId: string, preferences: Record<string, any>): Promise<Guest>;
   getGuestProfile(guestId: string): Promise<{
     guest: Guest;
@@ -100,6 +102,9 @@ export interface IHMSStorage {
     totalRevenue: number;
     lastStayDate?: Date;
   } | undefined>;
+  exportGuestData(guestId: string): Promise<any>;
+  mergeGuests(primaryGuestId: string, duplicateGuestId: string): Promise<Guest>;
+  anonymizeGuest(guestId: string): Promise<Guest>;
   
   // Rate Plan Management
   getRatePlan(id: string): Promise<RatePlan | undefined>;
@@ -452,6 +457,12 @@ export class DatabaseStorage implements IHMSStorage {
       nationality: guests.nationality,
       preferences: guests.preferences,
       vipStatus: guests.vipStatus,
+      blacklistStatus: guests.blacklistStatus,
+      blacklistReason: guests.blacklistReason,
+      loyaltyTier: guests.loyaltyTier,
+      loyaltyPoints: guests.loyaltyPoints,
+      segment: guests.segment,
+      tags: guests.tags,
       notes: guests.notes,
       createdAt: guests.createdAt,
       updatedAt: guests.updatedAt
@@ -462,6 +473,34 @@ export class DatabaseStorage implements IHMSStorage {
     .orderBy(desc(guests.createdAt));
     
     return guestsWithReservations;
+  }
+
+  async getAllGuests(): Promise<Guest[]> {
+    return await db.select().from(guests).orderBy(desc(guests.createdAt));
+  }
+
+  async getGuestsFiltered(filters: Record<string, any>): Promise<Guest[]> {
+    let query = db.select().from(guests);
+    const conditions = [];
+
+    if (filters.vipStatus !== undefined) {
+      conditions.push(eq(guests.vipStatus, filters.vipStatus));
+    }
+    if (filters.blacklistStatus !== undefined) {
+      conditions.push(eq(guests.blacklistStatus, filters.blacklistStatus));
+    }
+    if (filters.loyaltyTier) {
+      conditions.push(eq(guests.loyaltyTier, filters.loyaltyTier));
+    }
+    if (filters.segment) {
+      conditions.push(eq(guests.segment, filters.segment));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    return await query.orderBy(desc(guests.createdAt));
   }
 
   async getVIPGuests(propertyId: string): Promise<Guest[]> {
@@ -483,6 +522,12 @@ export class DatabaseStorage implements IHMSStorage {
       nationality: guests.nationality,
       preferences: guests.preferences,
       vipStatus: guests.vipStatus,
+      blacklistStatus: guests.blacklistStatus,
+      blacklistReason: guests.blacklistReason,
+      loyaltyTier: guests.loyaltyTier,
+      loyaltyPoints: guests.loyaltyPoints,
+      segment: guests.segment,
+      tags: guests.tags,
       notes: guests.notes,
       createdAt: guests.createdAt,
       updatedAt: guests.updatedAt
@@ -534,6 +579,54 @@ export class DatabaseStorage implements IHMSStorage {
       totalRevenue,
       lastStayDate
     };
+  }
+
+  // GDPR - Data Export, Merge, Anonymize
+  async exportGuestData(guestId: string): Promise<any> {
+    const guest = await this.getGuest(guestId);
+    if (!guest) return null;
+    
+    const stayHistory = await this.getGuestStayHistory(guestId);
+    const profile = await this.getGuestProfile(guestId);
+    
+    return {
+      guest,
+      stayHistory,
+      profile
+    };
+  }
+
+  async mergeGuests(primaryGuestId: string, duplicateGuestId: string): Promise<Guest> {
+    // Reassign all reservations from duplicate to primary
+    await db.update(reservations)
+      .set({ guestId: primaryGuestId })
+      .where(eq(reservations.guestId, duplicateGuestId));
+    
+    // Delete the duplicate guest
+    await db.delete(guests).where(eq(guests.id, duplicateGuestId));
+    
+    // Return the primary guest
+    return (await this.getGuest(primaryGuestId))!;
+  }
+
+  async anonymizeGuest(guestId: string): Promise<Guest> {
+    const result = await db.update(guests).set({
+      firstName: "REDACTED",
+      lastName: "REDACTED",
+      email: `redacted-${guestId}@example.com`,
+      phone: "REDACTED",
+      idNumber: "REDACTED",
+      dateOfBirth: null,
+      address: "REDACTED",
+      city: "REDACTED",
+      state: "REDACTED",
+      country: "REDACTED",
+      preferences: {},
+      notes: "Data anonymized per GDPR request",
+      updatedAt: new Date()
+    }).where(eq(guests.id, guestId)).returning();
+    
+    return result[0];
   }
 
   // Rate Plan Management
