@@ -28,10 +28,10 @@ export const USER_ROLES = {
     level: 9,
     description: "Administrative access to most modules and settings",
     permissions: [
-      "users.manage", "properties.manage", "reports.view.all",
+      "users.manage", "properties.manage", "reports.view.all", "reports.view",
       "reservations.manage", "guests.manage", "rooms.view", "rooms.manage",
       "billing.manage", "housekeeping.manage", "maintenance.manage", "rates.manage",
-      "front_desk.manage", "rooms.status.update"
+      "front_desk.manage", "front_desk.view", "rooms.status.update", "service_requests.view", "service_requests.manage"
     ]
   },
   operations_manager: {
@@ -39,7 +39,7 @@ export const USER_ROLES = {
     description: "Day-to-day operations management across departments",
     permissions: [
       "reservations.manage", "guests.view", "housekeeping.view",
-      "maintenance.view", "reports.view.operational", "front_desk.manage"
+      "maintenance.view", "reports.view.operational", "front_desk.manage", "front_desk.view"
     ]
   },
   hotel_manager: {
@@ -48,7 +48,7 @@ export const USER_ROLES = {
     permissions: [
       "reservations.manage", "guests.manage", "rooms.view", "rooms.manage", "properties.view", "billing.view",
       "housekeeping.manage", "maintenance.manage", "reports.view.property",
-      "reports.view.financial", "rates.view", "users.view.property", "front_desk.manage"
+      "reports.view.financial", "rates.view", "users.view.property", "front_desk.manage", "front_desk.view"
     ]
   },
   revenue_manager: {
@@ -93,7 +93,8 @@ export const USER_ROLES = {
     permissions: [
       "reservations.manage", "guests.manage", "folios.manage",
       "payments.process", "check_in.process", "check_out.process",
-      "service_requests.create", "rooms.view", "rooms.status.update"
+      "service_requests.create", "rooms.view", "rooms.status.update",
+      "front_desk.view"
     ]
   },
   maintenance_staff: {

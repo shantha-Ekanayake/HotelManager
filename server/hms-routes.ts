@@ -5,7 +5,8 @@ import { storage } from "./storage";
 import { 
   authenticate, 
   authorize, 
-  requirePropertyAccess, 
+  requirePropertyAccess,
+  canAccessProperty,
   login, 
   hashPassword,
   type AuthRequest 
@@ -1262,15 +1263,46 @@ export function registerReservationRoutes(app: Express) {
 
 // Front Desk Routes
 function registerFrontDeskRoutes(app: Express) {
+  // Helper to get property ID for multi-property users with authorization check
+  async function resolvePropertyId(req: AuthRequest): Promise<{ propertyId: string | null; authorized: boolean }> {
+    let propertyId = req.user?.propertyId || null;
+    
+    // If user has assigned property, they can only access that
+    if (propertyId) {
+      return { propertyId, authorized: true };
+    }
+    
+    // For multi-property users, allow query param with authorization check
+    if (req.query.propertyId) {
+      const requestedProperty = req.query.propertyId as string;
+      
+      // Verify user can access this property
+      if (!req.user || !canAccessProperty(req.user, requestedProperty)) {
+        return { propertyId: null, authorized: false };
+      }
+      
+      // Verify property exists
+      const property = await storage.getProperty(requestedProperty);
+      if (property) {
+        return { propertyId: requestedProperty, authorized: true };
+      }
+    }
+    
+    return { propertyId: null, authorized: true };
+  }
+
   // Get today's arrivals
   app.get("/api/front-desk/arrivals-today",
     authenticate,
-    authorize("front_desk.manage"),
+    authorize("front_desk.view"),
     async (req: AuthRequest, res: Response) => {
       try {
-        const propertyId = req.user?.propertyId;
+        const { propertyId, authorized } = await resolvePropertyId(req);
+        if (!authorized) {
+          return res.status(403).json({ error: "Access denied to this property" });
+        }
         if (!propertyId) {
-          return res.status(400).json({ error: "User property ID not found" });
+          return res.status(400).json({ error: "Property ID required. Use propertyId query parameter." });
         }
 
         const arrivals = await storage.getArrivalsToday(propertyId);
@@ -1285,12 +1317,15 @@ function registerFrontDeskRoutes(app: Express) {
   // Get today's departures
   app.get("/api/front-desk/departures-today",
     authenticate,
-    authorize("front_desk.manage"),
+    authorize("front_desk.view"),
     async (req: AuthRequest, res: Response) => {
       try {
-        const propertyId = req.user?.propertyId;
+        const { propertyId, authorized } = await resolvePropertyId(req);
+        if (!authorized) {
+          return res.status(403).json({ error: "Access denied to this property" });
+        }
         if (!propertyId) {
-          return res.status(400).json({ error: "User property ID not found" });
+          return res.status(400).json({ error: "Property ID required. Use propertyId query parameter." });
         }
 
         const departures = await storage.getDeparturesToday(propertyId);
@@ -1305,12 +1340,15 @@ function registerFrontDeskRoutes(app: Express) {
   // Get front desk overview stats
   app.get("/api/front-desk/overview",
     authenticate,
-    authorize("front_desk.manage"),
+    authorize("front_desk.view"),
     async (req: AuthRequest, res: Response) => {
       try {
-        const propertyId = req.user?.propertyId;
+        const { propertyId, authorized } = await resolvePropertyId(req);
+        if (!authorized) {
+          return res.status(403).json({ error: "Access denied to this property" });
+        }
         if (!propertyId) {
-          return res.status(400).json({ error: "User property ID not found" });
+          return res.status(400).json({ error: "Property ID required. Use propertyId query parameter." });
         }
 
         const [arrivals, departures, allReservations, rooms] = await Promise.all([
@@ -1372,12 +1410,15 @@ function registerFrontDeskRoutes(app: Express) {
   // Get current guests (checked-in reservations)
   app.get("/api/front-desk/current-guests",
     authenticate,
-    authorize("front_desk.manage"),
+    authorize("front_desk.view"),
     async (req: AuthRequest, res: Response) => {
       try {
-        const propertyId = req.user?.propertyId;
+        const { propertyId, authorized } = await resolvePropertyId(req);
+        if (!authorized) {
+          return res.status(403).json({ error: "Access denied to this property" });
+        }
         if (!propertyId) {
-          return res.status(400).json({ error: "User property ID not found" });
+          return res.status(400).json({ error: "Property ID required. Use propertyId query parameter." });
         }
 
         const reservations = await storage.getReservationsByProperty(propertyId);
@@ -2612,10 +2653,32 @@ export function registerReportingRoutes(app: Express) {
   app.get("/api/dashboard/analytics",
     authenticate,
     authorize("reports.view"),
-    requirePropertyAccess(),
     async (req: AuthRequest, res: Response) => {
       try {
-        const propertyId = req.user?.propertyId!;
+        // Use user's assigned property, or query param for multi-property roles
+        let propertyId = req.user?.propertyId || null;
+        
+        // If user has assigned property, they can only access that
+        if (propertyId) {
+          // User has assigned property - use it
+        } else if (req.query.propertyId) {
+          const requestedProperty = req.query.propertyId as string;
+          
+          // Verify user can access this property using canAccessProperty
+          if (!req.user || !canAccessProperty(req.user, requestedProperty)) {
+            return res.status(403).json({ error: "Access denied to this property" });
+          }
+          
+          // Verify the property exists before using it
+          const property = await storage.getProperty(requestedProperty);
+          if (property) {
+            propertyId = requestedProperty;
+          }
+        }
+        
+        if (!propertyId) {
+          return res.status(400).json({ error: "Property ID required. Please specify propertyId query parameter." });
+        }
         const today = new Date();
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
