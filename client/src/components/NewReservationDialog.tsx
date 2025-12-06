@@ -67,7 +67,7 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
   });
 
   const { data: guestsData } = useQuery<{ guests: any[] }>({
-    queryKey: ["/api/guests"],
+    queryKey: ["/api/guests/all"],
     enabled: open,
   });
 
@@ -83,6 +83,11 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
 
   const createReservationMutation = useMutation({
     mutationFn: async (data: any) => {
+      // Validate required fields
+      if (!data.guestId) {
+        throw new Error("Please select a guest before creating the reservation");
+      }
+      
       // Convert form data to API format
       const reservationData = {
         propertyId: data.propertyId,
@@ -104,14 +109,27 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
         createdBy: data.createdBy
       };
       
-      return apiRequest("POST", "/api/reservations", reservationData);
+      const response = await apiRequest("POST", "/api/reservations", reservationData);
+      return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
+    onSuccess: async (data: any) => {
+      const confirmationNumber = data?.reservation?.confirmationNumber;
+      
+      // Show toast first before closing dialog
       toast({
         title: "Success",
-        description: "Reservation created successfully",
+        description: confirmationNumber 
+          ? `Reservation created successfully (${confirmationNumber})` 
+          : "Reservation created successfully",
       });
+      
+      // Invalidate all reservation-related queries - use property-scoped keys to match page queries
+      const propertyId = user?.propertyId || "prop-demo";
+      await queryClient.invalidateQueries({ queryKey: ["/api/properties", propertyId, "reservations"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
+      
+      // Close dialog and reset form
       onOpenChange(false);
       form.reset();
     },
@@ -126,19 +144,42 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
 
   const createGuestMutation = useMutation({
     mutationFn: async (guestData: any) => {
-      return apiRequest("POST", "/api/guests", guestData);
+      const response = await apiRequest("POST", "/api/guests", guestData);
+      return response.json();
     },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/guests"] });
-      form.setValue("guestId", data.guest.id);
-      setShowNewGuestForm(false);
-      setNewGuest({ firstName: "", lastName: "", email: "", phone: "", idNumber: "" });
-      toast({
-        title: "Success",
-        description: "Guest created successfully",
-      });
+    onSuccess: async (data: any) => {
+      console.log("Guest creation response:", data);
+      
+      if (data?.guest?.id) {
+        // Set the guestId in form with proper trigger options
+        form.setValue("guestId", data.guest.id, { 
+          shouldDirty: true, 
+          shouldValidate: true,
+          shouldTouch: true 
+        });
+        
+        // Close the new guest form and reset inputs
+        setShowNewGuestForm(false);
+        setNewGuest({ firstName: "", lastName: "", email: "", phone: "", idNumber: "" });
+        
+        // Invalidate and refetch guests list
+        await queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
+        
+        toast({
+          title: "Success",
+          description: `Guest ${data.guest.firstName} ${data.guest.lastName} created and selected`,
+        });
+      } else {
+        console.error("Guest creation response missing ID:", data);
+        toast({
+          title: "Error",
+          description: "Guest created but no ID returned",
+          variant: "destructive",
+        });
+      }
     },
     onError: (error: any) => {
+      console.error("Guest creation error:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to create guest",
@@ -546,6 +587,7 @@ export function NewReservationDialog({ open, onOpenChange }: NewReservationDialo
                       <FormControl>
                         <Textarea
                           {...field}
+                          value={field.value || ""}
                           placeholder="Any special requests or preferences..."
                           data-testid="textarea-special-requests"
                         />
