@@ -215,6 +215,17 @@ export const guestCommunications = pgTable("guest_communications", {
   createdAt: timestamp("created_at").notNull().defaultNow()
 });
 
+// System Settings
+export const systemSettings = pgTable("system_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  key: text("key").notNull(),
+  value: text("value").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow()
+});
+
 // Rate Plans
 export const ratePlans = pgTable("rate_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -577,6 +588,12 @@ export const insertGuestCommunicationSchema = createInsertSchema(guestCommunicat
   createdAt: true
 });
 
+export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
 // Type Exports
 export type InsertProperty = z.infer<typeof insertPropertySchema>;
 export type Property = typeof properties.$inferSelect;
@@ -631,3 +648,6 @@ export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
 
 export type InsertGuestCommunication = z.infer<typeof insertGuestCommunicationSchema>;
 export type GuestCommunication = typeof guestCommunications.$inferSelect;
+
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+export type SystemSetting = typeof systemSettings.$inferSelect;
