@@ -40,10 +40,7 @@ export default function RoomTransferDialog({
 
   const transferMutation = useMutation({
     mutationFn: async (data: { targetRoomId: string; reason: string }) => {
-      return await apiRequest(`/api/front-desk/reservations/${reservationId}/transfer`, {
-        method: "POST",
-        body: JSON.stringify(data)
-      });
+      return await apiRequest("POST", `/api/front-desk/reservations/${reservationId}/transfer`, data);
     },
     onSuccess: (data: any) => {
       toast({

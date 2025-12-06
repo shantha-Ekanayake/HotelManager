@@ -550,24 +550,63 @@ export function registerGuestRoutes(app: Express) {
           return res.status(400).json({ error: "Search query required" });
         }
         
-        // Get all guests first, then filter by property through reservations
-        const allGuests = await storage.searchGuests(query as string);
-        
-        // Get property guests by checking their stay history  
-        const propertyGuests = [];
-        for (const guest of allGuests) {
-          const stayHistory = await storage.getGuestStayHistory(guest.id);
-          const hasPropertyStay = stayHistory.some(stay => 
-            stay.propertyId === req.user?.propertyId
-          );
-          if (hasPropertyStay) {
-            propertyGuests.push(guest);
-          }
-        }
-        
-        res.json({ guests: propertyGuests });
+        // Search all guests by name/email - returns all matching guests globally
+        const guests = await storage.searchGuests(query as string);
+        res.json({ guests });
       } catch (error) {
         console.error("Search guests error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get all guests with optional filters (must come before /:id route)
+  app.get("/api/guests/all",
+    authenticate,
+    authorize("guests.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { vipStatus, blacklistStatus, loyaltyTier, segment, tags } = req.query;
+        
+        const filters: any = {};
+        if (vipStatus !== undefined) filters.vipStatus = vipStatus === "true";
+        if (blacklistStatus !== undefined) filters.blacklistStatus = blacklistStatus === "true";
+        if (loyaltyTier) filters.loyaltyTier = loyaltyTier as string;
+        if (segment) filters.segment = segment as string;
+        if (tags) filters.tags = (tags as string).split(",");
+        
+        const guests = Object.keys(filters).length > 0 
+          ? await storage.getGuestsFiltered(filters)
+          : await storage.getAllGuests();
+          
+        res.json({ guests });
+      } catch (error) {
+        console.error("Get all guests error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Merge duplicate guests (must come before /:id route)
+  app.post("/api/guests/merge",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { primaryGuestId, duplicateGuestId } = req.body;
+        
+        if (!primaryGuestId || !duplicateGuestId) {
+          return res.status(400).json({ error: "Primary and duplicate guest IDs required" });
+        }
+        
+        if (primaryGuestId === duplicateGuestId) {
+          return res.status(400).json({ error: "Cannot merge guest with itself" });
+        }
+        
+        const mergedGuest = await storage.mergeGuests(primaryGuestId, duplicateGuestId);
+        res.json({ guest: mergedGuest, message: "Guests merged successfully" });
+      } catch (error) {
+        console.error("Merge guests error:", error);
         res.status(500).json({ error: "Internal server error" });
       }
     }
@@ -690,6 +729,172 @@ export function registerGuestRoutes(app: Express) {
       }
     }
   );
+
+  // Update guest loyalty tier and points
+  app.put("/api/guests/:id/loyalty",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { loyaltyTier, loyaltyPoints } = req.body;
+        
+        if (!loyaltyTier || !["none", "bronze", "silver", "gold", "platinum"].includes(loyaltyTier)) {
+          return res.status(400).json({ error: "Valid loyalty tier required" });
+        }
+        
+        const guest = await storage.updateGuestLoyalty(id, loyaltyTier, loyaltyPoints || 0);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest loyalty error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update guest blacklist status
+  app.put("/api/guests/:id/blacklist",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { blacklistStatus, blacklistReason } = req.body;
+        
+        if (typeof blacklistStatus !== "boolean") {
+          return res.status(400).json({ error: "Blacklist status must be boolean" });
+        }
+        
+        const guest = await storage.updateGuestBlacklist(id, blacklistStatus, blacklistReason);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest blacklist error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update guest tags
+  app.put("/api/guests/:id/tags",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { tags } = req.body;
+        
+        if (!Array.isArray(tags)) {
+          return res.status(400).json({ error: "Tags must be an array" });
+        }
+        
+        const guest = await storage.updateGuestTags(id, tags);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest tags error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Update guest segment
+  app.put("/api/guests/:id/segment",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { segment } = req.body;
+        
+        if (!segment || !["leisure", "business", "corporate", "group", "travel_agent", "ota"].includes(segment)) {
+          return res.status(400).json({ error: "Valid segment required" });
+        }
+        
+        const guest = await storage.updateGuestSegment(id, segment);
+        res.json({ guest });
+      } catch (error) {
+        console.error("Update guest segment error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Get guest communications
+  app.get("/api/guests/:id/communications",
+    authenticate,
+    authorize("guests.view"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const communications = await storage.getGuestCommunications(id);
+        res.json({ communications });
+      } catch (error) {
+        console.error("Get guest communications error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Add guest communication
+  app.post("/api/guests/:id/communications",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const { type, direction, subject, content } = req.body;
+        
+        if (!type || !direction || !content) {
+          return res.status(400).json({ error: "Type, direction, and content are required" });
+        }
+        
+        const communication = await storage.createGuestCommunication({
+          guestId: id,
+          type,
+          direction,
+          subject: subject || null,
+          content,
+          staffId: req.user?.id || null
+        });
+        res.status(201).json({ communication });
+      } catch (error) {
+        console.error("Create guest communication error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Export guest data (GDPR)
+  app.get("/api/guests/:id/export",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const exportData = await storage.exportGuestData(id);
+        res.json(exportData);
+      } catch (error) {
+        console.error("Export guest data error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Delete guest data (GDPR - anonymize)
+  app.delete("/api/guests/:id",
+    authenticate,
+    authorize("guests.manage"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        await storage.deleteGuest(id);
+        res.json({ success: true, message: "Guest data anonymized successfully" });
+      } catch (error) {
+        console.error("Delete guest error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
 }
 
 // Reservation Management Routes

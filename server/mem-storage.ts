@@ -6,7 +6,8 @@ import type {
   ServiceRequest, InsertServiceRequest, HousekeepingTask, InsertHousekeepingTask,
   RatePlan, InsertRatePlan, DailyRate, InsertDailyRate,
   DailyMetric, InsertDailyMetric, GuestSatisfaction, InsertGuestSatisfaction,
-  ReportDefinition, InsertReportDefinition, AnalyticsEvent, InsertAnalyticsEvent
+  ReportDefinition, InsertReportDefinition, AnalyticsEvent, InsertAnalyticsEvent,
+  GuestCommunication, InsertGuestCommunication
 } from "@shared/schema";
 import type { IHMSStorage } from "./database-storage";
 
@@ -20,6 +21,7 @@ class MemStorage implements IHMSStorage {
   private rooms: Map<string, Room> = new Map();
   private roomTypes: Map<string, RoomType> = new Map();
   private guests: Map<string, Guest> = new Map();
+  private guestCommunications: Map<string, GuestCommunication> = new Map();
   private reservations: Map<string, Reservation> = new Map();
   private folios: Map<string, Folio> = new Map();
   private charges: Map<string, Charge> = new Map();
@@ -285,29 +287,91 @@ class MemStorage implements IHMSStorage {
     ];
     rooms.forEach(room => this.rooms.set(room.id, room));
 
-    // Create a demo guest
-    const guest: Guest = {
-      id: "guest-demo",
-      firstName: "Alice",
-      lastName: "Johnson",
-      email: "alice.johnson@email.com",
-      phone: "+1-555-0199",
-      address: "456 Oak Avenue",
-      city: "Los Angeles",
-      state: "CA",
-      country: "USA",
-      postalCode: "90001",
-      dateOfBirth: new Date("1985-05-15"),
-      idType: "Passport",
-      idNumber: "P12345678",
-      nationality: "USA",
-      preferences: { roomType: "suite", floor: "high" },
-      vipStatus: false,
-      notes: "Prefers quiet rooms",
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    this.guests.set(guest.id, guest);
+    // Create demo guests
+    const guests: Guest[] = [
+      {
+        id: "guest-demo",
+        firstName: "Alice",
+        lastName: "Johnson",
+        email: "alice.johnson@email.com",
+        phone: "+1-555-0199",
+        address: "456 Oak Avenue",
+        city: "Los Angeles",
+        state: "CA",
+        country: "USA",
+        postalCode: "90001",
+        dateOfBirth: new Date("1985-05-15"),
+        idType: "Passport",
+        idNumber: "P12345678",
+        nationality: "USA",
+        preferences: { roomType: "suite", floor: "high", amenities: ["minibar", "balcony"] },
+        vipStatus: false,
+        blacklistStatus: false,
+        blacklistReason: null,
+        loyaltyTier: "silver",
+        loyaltyPoints: 2500,
+        segment: "business",
+        tags: ["frequent", "corporate"],
+        notes: "Prefers quiet rooms",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "guest-vip",
+        firstName: "Robert",
+        lastName: "Williams",
+        email: "r.williams@company.com",
+        phone: "+1-555-0200",
+        address: "789 Park Avenue",
+        city: "New York",
+        state: "NY",
+        country: "USA",
+        postalCode: "10021",
+        dateOfBirth: new Date("1975-03-20"),
+        idType: "Passport",
+        idNumber: "P98765432",
+        nationality: "USA",
+        preferences: { roomType: "presidential", floor: "top", amenities: ["butler", "limo"] },
+        vipStatus: true,
+        blacklistStatus: false,
+        blacklistReason: null,
+        loyaltyTier: "platinum",
+        loyaltyPoints: 15000,
+        segment: "corporate",
+        tags: ["vip", "executive", "long-stay"],
+        notes: "CEO of Williams Corp. Requires suite with city view.",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: "guest-leisure",
+        firstName: "Maria",
+        lastName: "Garcia",
+        email: "maria.garcia@gmail.com",
+        phone: "+1-555-0201",
+        address: "321 Beach Road",
+        city: "Miami",
+        state: "FL",
+        country: "USA",
+        postalCode: "33139",
+        dateOfBirth: new Date("1990-08-12"),
+        idType: "Driver License",
+        idNumber: "DL123456",
+        nationality: "USA",
+        preferences: { roomType: "standard", amenities: ["pool-access"] },
+        vipStatus: false,
+        blacklistStatus: false,
+        blacklistReason: null,
+        loyaltyTier: "bronze",
+        loyaltyPoints: 500,
+        segment: "leisure",
+        tags: ["family", "weekend"],
+        notes: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+    guests.forEach(g => this.guests.set(g.id, g));
 
     // Create rate plans
     const ratePlans: RatePlan[] = [
@@ -575,6 +639,197 @@ class MemStorage implements IHMSStorage {
     const lastStayDate = stayHistory.length > 0 ? new Date(stayHistory[0].checkInDate) : undefined;
 
     return { guest, stayHistory, totalStays, totalRevenue, lastStayDate };
+  }
+
+  // Extended Guest Management
+  async getAllGuests(): Promise<Guest[]> {
+    return Array.from(this.guests.values());
+  }
+
+  async getGuestsFiltered(filters: {
+    vipStatus?: boolean;
+    blacklistStatus?: boolean;
+    loyaltyTier?: string;
+    segment?: string;
+    tags?: string[];
+  }): Promise<Guest[]> {
+    let result = Array.from(this.guests.values());
+    
+    if (filters.vipStatus !== undefined) {
+      result = result.filter(g => g.vipStatus === filters.vipStatus);
+    }
+    if (filters.blacklistStatus !== undefined) {
+      result = result.filter(g => g.blacklistStatus === filters.blacklistStatus);
+    }
+    if (filters.loyaltyTier) {
+      result = result.filter(g => g.loyaltyTier === filters.loyaltyTier);
+    }
+    if (filters.segment) {
+      result = result.filter(g => g.segment === filters.segment);
+    }
+    if (filters.tags && filters.tags.length > 0) {
+      result = result.filter(g => 
+        g.tags && filters.tags!.some(tag => (g.tags as string[]).includes(tag))
+      );
+    }
+    
+    return result;
+  }
+
+  async updateGuestLoyalty(guestId: string, loyaltyTier: string, loyaltyPoints: number): Promise<Guest> {
+    const guest = this.guests.get(guestId);
+    if (!guest) throw new Error("Guest not found");
+    const updated = { ...guest, loyaltyTier, loyaltyPoints, updatedAt: new Date() };
+    this.guests.set(guestId, updated);
+    return updated;
+  }
+
+  async updateGuestBlacklist(guestId: string, blacklistStatus: boolean, blacklistReason?: string): Promise<Guest> {
+    const guest = this.guests.get(guestId);
+    if (!guest) throw new Error("Guest not found");
+    const updated = { ...guest, blacklistStatus, blacklistReason: blacklistReason || null, updatedAt: new Date() };
+    this.guests.set(guestId, updated);
+    return updated;
+  }
+
+  async updateGuestTags(guestId: string, tags: string[]): Promise<Guest> {
+    const guest = this.guests.get(guestId);
+    if (!guest) throw new Error("Guest not found");
+    const updated = { ...guest, tags, updatedAt: new Date() };
+    this.guests.set(guestId, updated);
+    return updated;
+  }
+
+  async updateGuestSegment(guestId: string, segment: string): Promise<Guest> {
+    const guest = this.guests.get(guestId);
+    if (!guest) throw new Error("Guest not found");
+    const updated = { ...guest, segment, updatedAt: new Date() };
+    this.guests.set(guestId, updated);
+    return updated;
+  }
+
+  async deleteGuest(guestId: string): Promise<void> {
+    // Anonymize guest for GDPR compliance instead of hard delete
+    const guest = this.guests.get(guestId);
+    if (!guest) throw new Error("Guest not found");
+    
+    const anonymized: Guest = {
+      ...guest,
+      firstName: "DELETED",
+      lastName: "USER",
+      email: null,
+      phone: null,
+      address: null,
+      city: null,
+      state: null,
+      country: null,
+      postalCode: null,
+      dateOfBirth: null,
+      idType: null,
+      idNumber: null,
+      nationality: null,
+      notes: "Guest data deleted per GDPR request",
+      updatedAt: new Date()
+    };
+    this.guests.set(guestId, anonymized);
+  }
+
+  async exportGuestData(guestId: string): Promise<object> {
+    const guest = this.guests.get(guestId);
+    if (!guest) throw new Error("Guest not found");
+    
+    const stayHistory = await this.getGuestStayHistory(guestId);
+    const communications = await this.getGuestCommunications(guestId);
+    const folios: Folio[] = [];
+    
+    for (const reservation of stayHistory) {
+      const folio = await this.getFolioByReservation(reservation.id);
+      if (folio) folios.push(folio);
+    }
+    
+    return {
+      guest,
+      stayHistory,
+      communications,
+      folios,
+      exportDate: new Date().toISOString()
+    };
+  }
+
+  async mergeGuests(primaryGuestId: string, duplicateGuestId: string): Promise<Guest> {
+    const primary = this.guests.get(primaryGuestId);
+    const duplicate = this.guests.get(duplicateGuestId);
+    
+    if (!primary) throw new Error("Primary guest not found");
+    if (!duplicate) throw new Error("Duplicate guest not found");
+    
+    // Merge loyalty points
+    const mergedPoints = (primary.loyaltyPoints || 0) + (duplicate.loyaltyPoints || 0);
+    
+    // Merge tags
+    const primaryTags = (primary.tags as string[]) || [];
+    const duplicateTags = (duplicate.tags as string[]) || [];
+    const mergedTags = [...new Set([...primaryTags, ...duplicateTags])];
+    
+    // Merge notes
+    const mergedNotes = [primary.notes, duplicate.notes].filter(Boolean).join(" | Merged: ");
+    
+    // Update primary guest
+    const merged: Guest = {
+      ...primary,
+      loyaltyPoints: mergedPoints,
+      tags: mergedTags,
+      notes: mergedNotes || null,
+      updatedAt: new Date()
+    };
+    this.guests.set(primaryGuestId, merged);
+    
+    // Transfer reservations from duplicate to primary
+    for (const [id, reservation] of this.reservations) {
+      if (reservation.guestId === duplicateGuestId) {
+        this.reservations.set(id, { ...reservation, guestId: primaryGuestId });
+      }
+    }
+    
+    // Transfer folios
+    for (const [id, folio] of this.folios) {
+      if (folio.guestId === duplicateGuestId) {
+        this.folios.set(id, { ...folio, guestId: primaryGuestId });
+      }
+    }
+    
+    // Transfer communications
+    for (const [id, comm] of this.guestCommunications) {
+      if (comm.guestId === duplicateGuestId) {
+        this.guestCommunications.set(id, { ...comm, guestId: primaryGuestId });
+      }
+    }
+    
+    // Mark duplicate as merged (anonymize)
+    await this.deleteGuest(duplicateGuestId);
+    
+    return merged;
+  }
+
+  // Guest Communication Management
+  async getGuestCommunications(guestId: string): Promise<GuestCommunication[]> {
+    return Array.from(this.guestCommunications.values())
+      .filter(c => c.guestId === guestId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async createGuestCommunication(comm: InsertGuestCommunication): Promise<GuestCommunication> {
+    const newComm: GuestCommunication = {
+      id: generateId(),
+      ...comm,
+      createdAt: new Date()
+    } as GuestCommunication;
+    this.guestCommunications.set(newComm.id, newComm);
+    return newComm;
+  }
+
+  async deleteGuestCommunication(id: string): Promise<void> {
+    this.guestCommunications.delete(id);
   }
 
   // Rate Plan Management
