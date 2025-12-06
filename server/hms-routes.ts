@@ -3417,6 +3417,37 @@ export function registerFinancialReportingRoutes(app: Express) {
   );
 }
 
+// Settings Routes
+export function registerSettingsRoutes(app: Express) {
+  // Get all settings for a property
+  app.get("/api/settings", authenticate, async (req: AuthRequest, res: Response) => {
+    try {
+      const propertyId = req.query.propertyId as string || "prop-demo";
+      const settings = await storage.getSettings(propertyId);
+      res.json({ settings });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  // Update a setting (admin only)
+  app.post("/api/settings", authenticate, authorize("admin"), async (req: AuthRequest, res: Response) => {
+    try {
+      const { key, value } = req.body;
+      const propertyId = "prop-demo";
+      
+      if (!key || typeof value !== "string") {
+        return res.status(400).json({ error: "Invalid key or value" });
+      }
+
+      const setting = await storage.updateSetting(propertyId, key, value);
+      res.json({ setting });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update setting" });
+    }
+  });
+}
+
 // Register all HMS routes
 export function registerHMSRoutes(app: Express) {
   registerAuthRoutes(app);
@@ -3434,4 +3465,5 @@ export function registerHMSRoutes(app: Express) {
   registerHousekeepingRoutes(app);
   registerReportingRoutes(app);
   registerFinancialReportingRoutes(app);
+  registerSettingsRoutes(app);
 }
