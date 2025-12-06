@@ -16,7 +16,7 @@ export default function Settings() {
   const isAdmin = user?.role === "admin" || user?.role === "it_admin";
 
   const { data: settingsData, isLoading } = useQuery<{ settings: Array<{ key: string; value: string }> }>({
-    queryKey: ["/api/settings", "prop-demo"]
+    queryKey: ["/api/settings/prop-demo"]
   });
 
   const updateSettingMutation = useMutation({
@@ -28,7 +28,7 @@ export default function Settings() {
         title: "Settings Updated",
         description: "System settings have been saved successfully",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/prop-demo"] });
     },
     onError: (error: any) => {
       toast({
