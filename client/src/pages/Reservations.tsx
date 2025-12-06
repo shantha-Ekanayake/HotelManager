@@ -101,7 +101,7 @@ export default function Reservations() {
                 roomType="Room"
                 checkIn={new Date(reservation.arrivalDate).toLocaleDateString()}
                 checkOut={new Date(reservation.departureDate).toLocaleDateString()}
-                status={reservation.status}
+                status={reservation.status.replace('_', '-') as "confirmed" | "pending" | "checked-in" | "checked-out" | "cancelled"}
                 totalAmount={parseFloat(reservation.totalAmount)}
                 guestEmail=""
                 onCheckIn={() => console.log(`Check in ${reservation.id}`)}
