@@ -24,7 +24,7 @@ import type { Room, RoomType, RatePlan } from "@shared/schema";
 const addRoomSchema = z.object({
   roomNumber: z.string().min(1, "Room number is required"),
   roomTypeId: z.string().min(1, "Room type is required"),
-  floor: z.string().optional(),
+  floor: z.coerce.number().optional(),
   notes: z.string().optional(),
 });
 
@@ -115,7 +115,7 @@ function useGuests() {
 }
 
 function useCurrentUser() {
-  return useQuery<{ user: { propertyId: string } }>({
+  return useQuery<{ user: { propertyId: string; role: string } }>({
     queryKey: ['/api/auth/me'],
   });
 }
@@ -175,7 +175,7 @@ export default function Rooms() {
 
   const roomForm = useForm({
     resolver: zodResolver(addRoomSchema),
-    defaultValues: { roomNumber: "", roomTypeId: "", floor: "", notes: "" },
+    defaultValues: { roomNumber: "", roomTypeId: "", floor: undefined, notes: "" },
   });
 
   const roomTypeForm = useForm({
@@ -190,6 +190,8 @@ export default function Rooms() {
 
   const { data: userData } = useCurrentUser();
   const propertyId = userData?.user?.propertyId || "prop-demo";
+  const userRole = userData?.user?.role || "";
+  const isManagerOrAbove = userRole === "hotel_manager" || userRole === "admin" || userRole === "system_admin" || userRole === "it_admin";
 
   const { data: roomsData, isLoading: roomsLoading, error: roomsError } = useRooms(propertyId);
   const { data: roomTypesData, isLoading: typesLoading } = useRoomTypes(propertyId);
@@ -231,7 +233,7 @@ export default function Rooms() {
 
   const addRoomMutation = useMutation({
     mutationFn: async (data: z.infer<typeof addRoomSchema>) => {
-      return apiRequest('POST', '/api/rooms', { ...data, propertyId });
+      return apiRequest('POST', `/api/properties/${propertyId}/rooms`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rooms`] });
@@ -250,7 +252,7 @@ export default function Rooms() {
 
   const addRoomTypeMutation = useMutation({
     mutationFn: async (data: z.infer<typeof addRoomTypeSchema>) => {
-      return apiRequest('POST', '/api/room-types', { ...data, propertyId });
+      return apiRequest('POST', `/api/properties/${propertyId}/room-types`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/room-types`] });
@@ -269,7 +271,7 @@ export default function Rooms() {
 
   const addRatePlanMutation = useMutation({
     mutationFn: async (data: z.infer<typeof addRatePlanSchema>) => {
-      return apiRequest('POST', '/api/rate-plans', { ...data, propertyId, isActive: true });
+      return apiRequest('POST', `/api/properties/${propertyId}/rate-plans`, { ...data, isActive: true });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rate-plans`] });
@@ -436,10 +438,12 @@ export default function Rooms() {
             Manage room status and availability
           </p>
         </div>
-        <Button data-testid="button-add-room" onClick={() => setIsAddRoomOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Room
-        </Button>
+        {isManagerOrAbove && (
+          <Button data-testid="button-add-room" onClick={() => setIsAddRoomOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Room
+          </Button>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

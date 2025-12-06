@@ -22,10 +22,7 @@ export default function ExpressCheckoutButton({
 
   const expressCheckoutMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/reservations/${reservationId}/express-checkout`, {
-        method: "POST",
-        body: JSON.stringify({})
-      });
+      return await apiRequest("POST", `/api/reservations/${reservationId}/express-checkout`, {});
     },
     onSuccess: (data: any) => {
       toast({
