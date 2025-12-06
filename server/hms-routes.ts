@@ -3420,9 +3420,9 @@ export function registerFinancialReportingRoutes(app: Express) {
 // Settings Routes
 export function registerSettingsRoutes(app: Express) {
   // Get all settings for a property
-  app.get("/api/settings", authenticate, async (req: AuthRequest, res: Response) => {
+  app.get("/api/settings/:propertyId", authenticate, async (req: AuthRequest, res: Response) => {
     try {
-      const propertyId = req.query.propertyId as string || "prop-demo";
+      const propertyId = req.params.propertyId;
       const settings = await storage.getSettings(propertyId);
       res.json({ settings });
     } catch (error) {
@@ -3430,8 +3430,8 @@ export function registerSettingsRoutes(app: Express) {
     }
   });
 
-  // Update a setting (admin only)
-  app.post("/api/settings", authenticate, authorize("admin"), async (req: AuthRequest, res: Response) => {
+  // Update a setting (settings.manage permission required)
+  app.post("/api/settings", authenticate, authorize("settings.manage"), async (req: AuthRequest, res: Response) => {
     try {
       const { key, value } = req.body;
       const propertyId = "prop-demo";

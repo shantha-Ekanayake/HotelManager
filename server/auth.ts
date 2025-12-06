@@ -30,7 +30,7 @@ export const USER_ROLES = {
     permissions: [
       "users.manage", "properties.manage", "reports.view.all",
       "reservations.manage", "guests.manage", "rooms.view", "rooms.manage",
-      "billing.manage", "housekeeping.manage", "maintenance.manage", "rates.manage"
+      "billing.manage", "housekeeping.manage", "maintenance.manage", "rates.manage", "settings.manage"
     ]
   },
   operations_manager: {
