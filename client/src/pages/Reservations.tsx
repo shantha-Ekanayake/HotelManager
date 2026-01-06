@@ -2,12 +2,16 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReservationCard from "@/components/ReservationCard";
 import { NewReservationDialog } from "@/components/NewReservationDialog";
+import CheckInForm from "@/components/CheckInForm";
+import CheckOutForm from "@/components/CheckOutForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Search, Plus, Filter } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { queryClient } from "@/lib/queryClient";
 import type { Reservation } from "@shared/schema";
 
 export default function Reservations() {
@@ -15,6 +19,8 @@ export default function Reservations() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isNewReservationOpen, setIsNewReservationOpen] = useState(false);
+  const [checkInReservationId, setCheckInReservationId] = useState<string | null>(null);
+  const [checkOutReservationId, setCheckOutReservationId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<{ reservations: Reservation[] }>({
     queryKey: ["/api/properties", user?.propertyId, "reservations"],
@@ -104,8 +110,8 @@ export default function Reservations() {
                 status={reservation.status.replace('_', '-') as "confirmed" | "pending" | "checked-in" | "checked-out" | "cancelled"}
                 totalAmount={parseFloat(reservation.totalAmount)}
                 guestEmail=""
-                onCheckIn={() => console.log(`Check in ${reservation.id}`)}
-                onCheckOut={() => console.log(`Check out ${reservation.id}`)}
+                onCheckIn={() => setCheckInReservationId(reservation.id)}
+                onCheckOut={() => setCheckOutReservationId(reservation.id)}
                 onViewDetails={() => console.log(`View details ${reservation.id}`)}
               />
             ))}
@@ -127,6 +133,46 @@ export default function Reservations() {
         open={isNewReservationOpen}
         onOpenChange={setIsNewReservationOpen}
       />
+
+      <Dialog open={!!checkInReservationId} onOpenChange={(open) => !open && setCheckInReservationId(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Guest Check-In</DialogTitle>
+            <DialogDescription>
+              Complete the check-in process by selecting a room and verifying guest information.
+            </DialogDescription>
+          </DialogHeader>
+          {checkInReservationId && (
+            <CheckInForm
+              reservationId={checkInReservationId}
+              onCheckInComplete={() => {
+                setCheckInReservationId(null);
+                queryClient.invalidateQueries({ queryKey: ["/api/properties", user?.propertyId, "reservations"] });
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!checkOutReservationId} onOpenChange={(open) => !open && setCheckOutReservationId(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Guest Check-Out</DialogTitle>
+            <DialogDescription>
+              Complete the check-out process by reviewing charges and processing payment.
+            </DialogDescription>
+          </DialogHeader>
+          {checkOutReservationId && (
+            <CheckOutForm
+              reservationId={checkOutReservationId}
+              onCheckOutComplete={() => {
+                setCheckOutReservationId(null);
+                queryClient.invalidateQueries({ queryKey: ["/api/properties", user?.propertyId, "reservations"] });
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
