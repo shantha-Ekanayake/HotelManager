@@ -56,7 +56,10 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       });
       queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/departures-today"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/front-desk/current-guests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
       onCheckOutComplete?.(folioData);
     },
     onError: (error: any) => {

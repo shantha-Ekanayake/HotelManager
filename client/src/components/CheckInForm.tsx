@@ -57,7 +57,10 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
       });
       queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/arrivals-today"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/front-desk/current-guests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
       onCheckInComplete?.(reservation);
     },
     onError: (error: any) => {
