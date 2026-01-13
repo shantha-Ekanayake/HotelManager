@@ -1168,7 +1168,22 @@ export function registerReservationRoutes(app: Express) {
           return res.status(500).json({ error: result.error || "Reservation creation failed" });
         }
         
-        res.status(201).json({ reservation: result.reservation });
+        // Create folio automatically for the reservation
+        const reservation = result.reservation!;
+        const depositAmt = reservation.depositAmount || "0.00";
+        const folio = await storage.createFolio({
+          propertyId: reservation.propertyId,
+          reservationId: reservation.id,
+          guestId: reservation.guestId,
+          status: "open",
+          totalCharges: reservation.totalAmount,
+          totalPayments: reservation.depositPaid ? depositAmt : "0.00",
+          balance: reservation.depositPaid 
+            ? (parseFloat(reservation.totalAmount) - parseFloat(depositAmt)).toFixed(2)
+            : reservation.totalAmount
+        });
+        
+        res.status(201).json({ reservation, folio });
       } catch (error) {
         if (error instanceof z.ZodError) {
           return res.status(400).json({ error: "Validation error", details: error.errors });
