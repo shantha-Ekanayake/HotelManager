@@ -28,7 +28,7 @@ export const USER_ROLES = {
     level: 9,
     description: "Administrative access to most modules and settings",
     permissions: [
-      "users.manage", "properties.manage", "reports.view.all", "reports.view",
+      "users.manage", "properties.manage", "reports.view.all", "reports.view", "reports.view.financial",
       "reservations.manage", "guests.manage", "rooms.view", "rooms.manage",
       "billing.manage", "housekeeping.manage", "maintenance.manage", "rates.manage",
       "front_desk.manage", "front_desk.view", "rooms.status.update", "service_requests.view", "service_requests.manage",
