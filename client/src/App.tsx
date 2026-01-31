@@ -75,7 +75,6 @@ function AuthenticatedApp() {
             userName={userName}
             userRole={userRole}
             notifications={3}
-            onLogout={logout}
           />
           <main className="flex-1 overflow-auto">
             <div className="container mx-auto p-6">
