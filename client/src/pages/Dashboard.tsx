@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { Users, Bed, DollarSign, Calendar, TrendingUp, Star, BarChart3, Clock } from "lucide-react";
+import { useLocation } from "wouter";
 
 // Dashboard Analytics Type
 interface DashboardAnalytics {
@@ -197,10 +198,31 @@ function DashboardCardSkeleton() {
   );
 }
 
+// Helper function to calculate average for arrays with possible undefined/null values
+function calculateAverage(data: any[], key: string): number {
+  if (!data || data.length === 0) return 0;
+  const validValues = data
+    .map(item => typeof item[key] === 'string' ? parseFloat(item[key]) : item[key])
+    .filter(val => val !== null && val !== undefined && !isNaN(val));
+  
+  if (validValues.length === 0) return 0;
+  return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
+}
+
+// Helper function to calculate total for arrays with possible undefined/null values
+function calculateTotal(data: any[], key: string): number {
+  if (!data || data.length === 0) return 0;
+  return data
+    .map(item => typeof item[key] === 'string' ? parseFloat(item[key]) : item[key])
+    .filter(val => val !== null && val !== undefined && !isNaN(val))
+    .reduce((sum, val) => sum + val, 0);
+}
+
 export default function Dashboard() {
   const { data: analytics, isLoading: analyticsLoading, error: analyticsError } = useDashboardAnalytics();
   const { data: recentReservations, isLoading: reservationsLoading } = useRecentReservations();
   const { data: roomsData, isLoading: roomsLoading } = useRoomStatus();
+  const [, setLocation] = useLocation();
 
   // Generate stats from analytics data
   const stats = analytics ? [
@@ -297,9 +319,9 @@ export default function Dashboard() {
                     totalAmount={reservation.totalAmount}
                     guestEmail={reservation.guest?.email || ''}
                     guestPhone={reservation.guest?.phone || ''}
-                    onCheckIn={() => console.log(`Check in ${reservation.id}`)}
-                    onCheckOut={() => console.log(`Check out ${reservation.id}`)}
-                    onViewDetails={() => console.log(`View details ${reservation.id}`)}
+                    onCheckIn={() => setLocation('/front-desk')}
+                    onCheckOut={() => setLocation('/front-desk')}
+                    onViewDetails={() => setLocation(`/guests`)}
                   />
                 ))
               ) : (
@@ -334,7 +356,7 @@ export default function Dashboard() {
                     checkOut={room.currentReservation ? formatDate(room.currentReservation.checkOutDate) : undefined}
                     amenities={room.roomType?.amenities || []}
                     onStatusChange={(status) => console.log(`Room ${room.number} status changed to ${status}`)}
-                    onViewDetails={() => console.log(`View room ${room.number} details`)}
+                    onViewDetails={() => setLocation('/rooms')}
                   />
                 ))
               ) : (
@@ -360,25 +382,25 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
               <div>
                 <div className="text-2xl font-bold text-primary">
-                  {formatPercentage(analytics.monthlyTrend.reduce((sum: number, day: any) => sum + (day.occupancyRate || 0), 0) / analytics.monthlyTrend.length)}
+                  {formatPercentage(calculateAverage(analytics.monthlyTrend, 'occupancyRate'))}
                 </div>
                 <div className="text-sm text-muted-foreground">Avg Occupancy</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-primary">
-                  {formatCurrency(analytics.monthlyTrend.reduce((sum: number, day: any) => sum + (day.totalRevenue || 0), 0))}
+                  {formatCurrency(calculateTotal(analytics.monthlyTrend, 'totalRevenue'))}
                 </div>
                 <div className="text-sm text-muted-foreground">Total Revenue</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-primary">
-                  {formatCurrency(analytics.monthlyTrend.reduce((sum: number, day: any) => sum + (day.adr || 0), 0) / analytics.monthlyTrend.length)}
+                  {formatCurrency(calculateAverage(analytics.monthlyTrend, 'adr'))}
                 </div>
                 <div className="text-sm text-muted-foreground">Avg ADR</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-primary">
-                  {Math.round(analytics.monthlyTrend.reduce((sum: number, day: any) => sum + (day.revpar || 0), 0) / analytics.monthlyTrend.length)}
+                  {formatCurrency(calculateAverage(analytics.monthlyTrend, 'revpar'))}
                 </div>
                 <div className="text-sm text-muted-foreground">Avg RevPAR</div>
               </div>

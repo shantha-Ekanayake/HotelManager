@@ -1153,19 +1153,10 @@ export function registerReservationRoutes(app: Express) {
         }, true);
         
         if (!result.success) {
-          if (result.error?.includes("No rooms available")) {
-            return res.status(409).json({ 
-              error: result.error,
-              availability: result.availability
-            });
-          }
-          if (result.error?.includes("booking restrictions")) {
-            return res.status(409).json({ 
-              error: result.error,
-              restrictions: result.availability?.restrictions
-            });
-          }
-          return res.status(500).json({ error: result.error || "Reservation creation failed" });
+          return res.status(400).json({ 
+            error: "Room Availability Error", 
+            message: result.error || "The selected room is already booked for these dates." 
+          });
         }
         
         // Create folio automatically for the reservation

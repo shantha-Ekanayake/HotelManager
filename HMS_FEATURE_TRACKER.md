@@ -13,12 +13,10 @@
 - **Third-Party Integrations**: 0% Complete (0/10)
 - **Infrastructure**: 30% Complete (3/10)
 
-**Recent Updates** (November 29, 2025):
-- Guests Module: 25% → 100% (Complete: directory, search, filtering, loyalty tiers, GDPR compliance, merge, communications)
-- Front Desk Module: 85% → 95% (Added Walk-in, Room Transfer, No-Show, Express Checkout, Early/Late Management, Shift Reports)
-- Rooms Module: 30% → 100% (Complete Frontend UI: room status management, blocking, out-of-order maintenance)
-- Guest Services: 100% Complete (Service requests, priority management, status tracking)
-- Overall Progress: 35% → 48% → 58% → 65% → 73% (Core Modules advancing rapidly)
+**Recent Updates** (January 31, 2026):
+- Dashboard Module: Fixed NaN values in monthly performance and implemented active navigation for all dashboard action links.
+- Reservations Module: Implemented room availability check during reservation creation to prevent double bookings.
+- Front Desk Module: Fixed UI refresh issue after check-in/check-out by implementing proper cache invalidation.
 
 ---
 
