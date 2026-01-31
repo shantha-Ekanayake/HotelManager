@@ -1154,8 +1154,8 @@ export function registerReservationRoutes(app: Express) {
         
         if (!result.success) {
           return res.status(400).json({ 
-            error: "Room Availability Error", 
-            message: result.error || "The selected room is already booked for these dates." 
+            error: "Room Not Available", 
+            message: "We're sorry, but the selected room is no longer available for the requested dates. Please choose a different room or adjust your dates." 
           });
         }
         
