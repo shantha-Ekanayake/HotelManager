@@ -22,6 +22,47 @@ import {
 } from 'lucide-react';
 
 export default function FinancialReports() {
+  const [targetCurrency, setTargetCurrency] = useState(() => {
+    return localStorage.getItem("preferred_currency") || "LKR";
+  });
+
+  const exchangeRates: Record<string, number> = {
+    "LKR": 1,
+    "USD": 0.0033,
+    "EUR": 0.0031,
+    "GBP": 0.0026
+  };
+
+  const convertAmount = (amount: number | string) => {
+    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(rawAmount)) return 0;
+    return rawAmount * (exchangeRates[targetCurrency] || 1);
+  };
+
+  const formatWithCurrency = (amount: number | string) => {
+    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
+    
+    const converted = convertAmount(rawAmount);
+    if (targetCurrency === "LKR") {
+      return new Intl.NumberFormat('en-LK', {
+        style: 'currency',
+        currency: 'LKR',
+        currencyDisplay: 'symbol'
+      }).format(rawAmount).replace('LKR', 'Rs.');
+    }
+    
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: targetCurrency
+    }).format(converted);
+  };
+
+  const handleCurrencyChange = (value: string) => {
+    setTargetCurrency(value);
+    localStorage.setItem("preferred_currency", value);
+  };
+
   const [dateRange, setDateRange] = useState({
     fromDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days ago
     toDate: new Date().toISOString().split('T')[0] // Today
@@ -133,15 +174,31 @@ export default function FinancialReports() {
             Comprehensive financial analytics and reporting dashboard
           </p>
         </div>
-        <Button 
-          onClick={exportAccountingData} 
-          variant="outline" 
-          className="flex items-center gap-2"
-          data-testid="button-export-data"
-        >
-          <Download className="h-4 w-4" />
-          Export Data
-        </Button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Display Currency:</span>
+            <Select value={targetCurrency} onValueChange={handleCurrencyChange}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="LKR">LKR (Rs.)</SelectItem>
+                <SelectItem value="USD">USD ($)</SelectItem>
+                <SelectItem value="EUR">EUR (€)</SelectItem>
+                <SelectItem value="GBP">GBP (£)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button 
+            onClick={exportAccountingData} 
+            variant="outline" 
+            className="flex items-center gap-2"
+            data-testid="button-export-data"
+          >
+            <Download className="h-4 w-4" />
+            Export Data
+          </Button>
+        </div>
       </div>
 
       {/* Date Range Selector */}
@@ -201,15 +258,15 @@ export default function FinancialReports() {
                   <h3 className="text-lg font-semibold border-b pb-2">Revenue</h3>
                   <div className="flex justify-between items-center py-1">
                     <span>Room Revenue</span>
-                    <span className="font-medium">{formatCurrency((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0)}</span>
+                    <span className="font-medium">{formatWithCurrency((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1">
                     <span>Other Revenue</span>
-                    <span className="font-medium">{formatCurrency(0)}</span>
+                    <span className="font-medium">{formatWithCurrency(0)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1 font-bold">
                     <span>Total Revenue</span>
-                    <span>{formatCurrency((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0)}</span>
+                    <span>{formatWithCurrency((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0)}</span>
                   </div>
                 </div>
 
@@ -217,22 +274,22 @@ export default function FinancialReports() {
                   <h3 className="text-lg font-semibold border-b pb-2">Expenses (Estimated)</h3>
                   <div className="flex justify-between items-center py-1">
                     <span>Operating Costs (30%)</span>
-                    <span className="text-red-600">({formatCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.3)})</span>
+                    <span className="text-red-600">({formatWithCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.3)})</span>
                   </div>
                   <div className="flex justify-between items-center py-1">
                     <span>Maintenance & Utilities (10%)</span>
-                    <span className="text-red-600">({formatCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.1)})</span>
+                    <span className="text-red-600">({formatWithCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.1)})</span>
                   </div>
                   <div className="flex justify-between items-center py-1 font-bold">
                     <span>Total Expenses</span>
-                    <span className="text-red-600">({formatCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.4)})</span>
+                    <span className="text-red-600">({formatWithCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.4)})</span>
                   </div>
                 </div>
 
                 <div className="pt-4 mt-4 border-t-2 border-primary/20">
                   <div className="flex justify-between items-center text-xl font-bold">
                     <span>Net Profit</span>
-                    <span className="text-green-600">{formatCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.6)}</span>
+                    <span className="text-green-600">{formatWithCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.6)}</span>
                   </div>
                 </div>
               </div>
@@ -268,10 +325,10 @@ export default function FinancialReports() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold" data-testid="text-total-revenue">
-                      {formatCurrency((dashboardData as any).dashboard.summary.totalRevenue)}
+                      {formatWithCurrency((dashboardData as any).dashboard.summary.totalRevenue)}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      ADR: {formatCurrency((dashboardData as any).dashboard.summary.avgDailyRate)}
+                      ADR: {formatWithCurrency((dashboardData as any).dashboard.summary.avgDailyRate)}
                     </p>
                   </CardContent>
                 </Card>
@@ -283,10 +340,10 @@ export default function FinancialReports() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold" data-testid="text-total-payments">
-                      {formatCurrency((dashboardData as any).dashboard.summary.totalPayments)}
+                      {formatWithCurrency((dashboardData as any).dashboard.summary.totalPayments)}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      RevPAR: {formatCurrency((dashboardData as any).dashboard.summary.revpar)}
+                      RevPAR: {formatWithCurrency((dashboardData as any).dashboard.summary.revpar)}
                     </p>
                   </CardContent>
                 </Card>
@@ -298,7 +355,7 @@ export default function FinancialReports() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold" data-testid="text-outstanding-balance">
-                      {formatCurrency((dashboardData as any).dashboard.summary.outstandingBalance)}
+                      {formatWithCurrency((dashboardData as any).dashboard.summary.outstandingBalance)}
                     </div>
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
                       {(dashboardData as any).dashboard.summary.outstandingBalance > 0 ? (
@@ -351,9 +408,9 @@ export default function FinancialReports() {
                           </span>
                         </div>
                         <div className="text-right">
-                          <div className="font-semibold">{formatCurrency(data.amount)}</div>
+                          <div className="font-semibold">{formatWithCurrency(data.amount)}</div>
                           <div className="text-xs text-muted-foreground">
-                            Avg: {formatCurrency(data.avgAmount)}
+                            Avg: {formatWithCurrency(data.avgAmount)}
                           </div>
                         </div>
                       </div>
@@ -379,7 +436,7 @@ export default function FinancialReports() {
                           <div className="text-sm text-muted-foreground">{charge.description}</div>
                         </div>
                         <div className="text-right">
-                          <div className="font-semibold">{formatCurrency(charge.amount)}</div>
+                          <div className="font-semibold">{formatWithCurrency(charge.amount)}</div>
                           <div className="text-xs text-muted-foreground">
                             {charge.count} charges
                           </div>
@@ -428,7 +485,7 @@ export default function FinancialReports() {
                   <CardTitle className="text-sm">Average Folio Value</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatCurrency((folioData as any).report.avgFolioValue)}</div>
+                  <div className="text-2xl font-bold">{formatWithCurrency((folioData as any).report.avgFolioValue)}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -436,7 +493,7 @@ export default function FinancialReports() {
                   <CardTitle className="text-sm">Outstanding Balance</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-red-600">{formatCurrency((folioData as any).report.outstandingBalance)}</div>
+                  <div className="text-2xl font-bold text-red-600">{formatWithCurrency((folioData as any).report.outstandingBalance)}</div>
                 </CardContent>
               </Card>
             </div>
@@ -466,7 +523,7 @@ export default function FinancialReports() {
                   <CardTitle className="text-sm">Total Charges</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatCurrency((chargesData as any).report.totalCharges)}</div>
+                  <div className="text-2xl font-bold">{formatWithCurrency((chargesData as any).report.totalCharges)}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -474,7 +531,7 @@ export default function FinancialReports() {
                   <CardTitle className="text-sm">Total Taxes</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatCurrency((chargesData as any).report.totalTaxes)}</div>
+                  <div className="text-2xl font-bold">{formatWithCurrency((chargesData as any).report.totalTaxes)}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -483,7 +540,7 @@ export default function FinancialReports() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-orange-600">
-                    {formatCurrency((chargesData as any).report.voidedCharges.amount)}
+                    {formatWithCurrency((chargesData as any).report.voidedCharges.amount)}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {(chargesData as any).report.voidedCharges.count} voided
@@ -517,7 +574,7 @@ export default function FinancialReports() {
                   <CardTitle className="text-sm">Total Payments</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatCurrency((paymentsData as any).report.totalPayments)}</div>
+                  <div className="text-2xl font-bold">{formatWithCurrency((paymentsData as any).report.totalPayments)}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -526,7 +583,7 @@ export default function FinancialReports() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-red-600">
-                    {formatCurrency((paymentsData as any).report.refundsAnalysis.totalRefunds)}
+                    {formatWithCurrency((paymentsData as any).report.refundsAnalysis.totalRefunds)}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {(paymentsData as any).report.refundsAnalysis.refundCount} refunds

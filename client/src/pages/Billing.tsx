@@ -105,6 +105,47 @@ export default function Billing() {
   const [showChargeDialog, setShowChargeDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
 
+  const [targetCurrency, setTargetCurrency] = useState(() => {
+    return localStorage.getItem("preferred_currency") || "LKR";
+  });
+
+  const exchangeRates: Record<string, number> = {
+    "LKR": 1,
+    "USD": 0.0033,
+    "EUR": 0.0031,
+    "GBP": 0.0026
+  };
+
+  const convertAmount = (amount: number | string) => {
+    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(rawAmount)) return 0;
+    return rawAmount * (exchangeRates[targetCurrency] || 1);
+  };
+
+  const formatWithCurrency = (amount: number | string) => {
+    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
+    
+    const converted = convertAmount(rawAmount);
+    if (targetCurrency === "LKR") {
+      return new Intl.NumberFormat('en-LK', {
+        style: 'currency',
+        currency: 'LKR',
+        currencyDisplay: 'symbol'
+      }).format(rawAmount).replace('LKR', 'Rs.');
+    }
+    
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: targetCurrency
+    }).format(converted);
+  };
+
+  const handleCurrencyChange = (value: string) => {
+    setTargetCurrency(value);
+    localStorage.setItem("preferred_currency", value);
+  };
+
   // Get billing summary (using authenticated user's property)
   const { data: billingSummary, isLoading: summaryLoading } = useQuery({
     queryKey: ["/api/billing", "summary"],
@@ -283,6 +324,20 @@ export default function Billing() {
           <h1 className="text-3xl font-bold text-foreground" data-testid="text-page-title">Billing & Folios</h1>
           <p className="text-muted-foreground">Manage guest billing, charges, and payments</p>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Display Currency:</span>
+          <Select value={targetCurrency} onValueChange={handleCurrencyChange}>
+            <SelectTrigger className="w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="LKR">LKR (Rs.)</SelectItem>
+              <SelectItem value="USD">USD ($)</SelectItem>
+              <SelectItem value="EUR">EUR (€)</SelectItem>
+              <SelectItem value="GBP">GBP (£)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Billing Summary Cards */}
@@ -294,7 +349,7 @@ export default function Billing() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-total-revenue">
-              Rs {summaryLoading ? "..." : (billingSummary as any)?.summary?.totalRevenue?.toFixed(2) || "0.00"}
+              {summaryLoading ? "..." : formatWithCurrency((billingSummary as any)?.summary?.totalRevenue || 0)}
             </div>
             <p className="text-xs text-muted-foreground">All completed transactions</p>
           </CardContent>
@@ -307,7 +362,7 @@ export default function Billing() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-outstanding-balance">
-              Rs {summaryLoading ? "..." : (billingSummary as any)?.summary?.totalOutstanding?.toFixed(2) || "0.00"}
+              {summaryLoading ? "..." : formatWithCurrency((billingSummary as any)?.summary?.totalOutstanding || 0)}
             </div>
             <p className="text-xs text-muted-foreground">Unpaid amounts</p>
           </CardContent>
@@ -333,7 +388,7 @@ export default function Billing() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-today-charges">
-              Rs {summaryLoading ? "..." : (billingSummary as any)?.summary?.totalCharges?.toFixed(2) || "0.00"}
+              {summaryLoading ? "..." : formatWithCurrency((billingSummary as any)?.summary?.totalCharges || 0)}
             </div>
             <p className="text-xs text-muted-foreground">Posted today</p>
           </CardContent>
@@ -390,16 +445,16 @@ export default function Billing() {
                   <div className="text-xs text-muted-foreground space-y-1">
                     <div className="flex justify-between">
                       <span>Charges:</span>
-                      <span className="font-medium">Rs {parseFloat(folio.totalCharges).toFixed(2)}</span>
+                      <span className="font-medium">{formatWithCurrency(folio.totalCharges)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Payments:</span>
-                      <span className="font-medium">Rs {parseFloat(folio.totalPayments).toFixed(2)}</span>
+                      <span className="font-medium">{formatWithCurrency(folio.totalPayments)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Balance:</span>
                       <span className={`font-medium ${parseFloat(folio.balance) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        Rs {parseFloat(folio.balance).toFixed(2)}
+                        {formatWithCurrency(folio.balance)}
                       </span>
                     </div>
                   </div>
@@ -489,13 +544,13 @@ export default function Billing() {
                                 )}
                               </div>
                               <span className="font-medium text-lg">
-                                Rs {parseFloat(charge.totalAmount).toFixed(2)}
+                                {formatWithCurrency(charge.totalAmount)}
                               </span>
                             </div>
                             <div className="text-sm text-muted-foreground">
                               <div className="flex justify-between">
-                                <span>Amount: Rs {parseFloat(charge.amount).toFixed(2)}</span>
-                                <span>Tax: Rs {parseFloat(charge.taxAmount).toFixed(2)}</span>
+                                <span>Amount: {formatWithCurrency(charge.amount)}</span>
+                                <span>Tax: {formatWithCurrency(charge.taxAmount)}</span>
                               </div>
                               <div className="flex justify-between mt-1">
                                 <span>Posted: {format(new Date(charge.postingDate), "MMM dd, yyyy")}</span>
@@ -528,7 +583,7 @@ export default function Billing() {
                                 {getPaymentStatusBadge(payment.status)}
                               </div>
                               <span className="font-medium text-lg">
-                                Rs {parseFloat(payment.amount).toFixed(2)}
+                                {formatWithCurrency(payment.amount)}
                               </span>
                             </div>
                             <div className="text-sm text-muted-foreground">

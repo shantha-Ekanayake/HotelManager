@@ -256,7 +256,7 @@ export default function Dashboard() {
 
   const formatWithCurrency = (amount: number) => {
     const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
+    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : (targetCurrency === "USD" ? "$0.00" : (targetCurrency === "EUR" ? "€0.00" : "£0.00"));
     const converted = convertAmount(rawAmount);
     if (targetCurrency === "LKR") return formatCurrency(rawAmount);
     
