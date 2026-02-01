@@ -326,7 +326,7 @@ export default function Rooms() {
   const addRatePlanMutation = useMutation({
     mutationFn: async (data: z.infer<typeof addRatePlanSchema>) => {
       if (selectedRatePlan) {
-        return apiRequest('PATCH', `/api/rate-plans/${selectedRatePlan.id}`, data);
+        return apiRequest('PUT', `/api/rate-plans/${selectedRatePlan.id}`, data);
       }
       return apiRequest('POST', `/api/properties/${propertyId}/rate-plans`, { ...data, isActive: true });
     },
