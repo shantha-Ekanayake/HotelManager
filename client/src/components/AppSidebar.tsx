@@ -119,7 +119,7 @@ export function AppSidebar() {
         "reservations.manage", "reservations.view", "guests.manage", "guests.view", "folios.manage",
         "payments.process", "check_in.process", "check_out.process",
         "service_requests.create", "rooms.view", "rooms.status.update",
-        "front_desk.view"
+        "front_desk.view", "front_desk.manage"
       ],
       housekeeping_staff: [
         "housekeeping.tasks.update", "rooms.status.update.assigned", "housekeeping.view"

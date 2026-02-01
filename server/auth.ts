@@ -96,7 +96,7 @@ export const USER_ROLES = {
       "reservations.manage", "guests.manage", "folios.manage",
       "payments.process", "check_in.process", "check_out.process",
       "service_requests.create", "rooms.view", "rooms.status.update",
-      "front_desk.view"
+      "front_desk.view", "front_desk.manage"
     ]
   },
   maintenance_staff: {
