@@ -116,7 +116,7 @@ export const properties = pgTable("properties", {
   postalCode: text("postal_code"),
   phone: text("phone"),
   email: text("email"),
-  currency: text("currency").notNull().default("USD"),
+  currency: text("currency").notNull().default("Rs"),
   timezone: text("timezone").notNull().default("UTC"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),

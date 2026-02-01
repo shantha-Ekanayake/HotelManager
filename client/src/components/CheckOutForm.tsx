@@ -155,7 +155,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
               {folio.charges.map((charge) => (
                 <div key={charge.id} className="flex justify-between text-sm">
                   <span>{charge.description}</span>
-                  <span>${parseFloat(charge.amount).toFixed(2)}</span>
+                  <span>Rs {parseFloat(charge.amount).toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -167,7 +167,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           
           <div className="flex justify-between font-semibold">
             <span>Total Charges</span>
-            <span>${totalCharges.toFixed(2)}</span>
+            <span>Rs {totalCharges.toFixed(2)}</span>
           </div>
 
           {folio?.payments && folio.payments.length > 0 && (
@@ -177,7 +177,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
                 {folio.payments.map((payment) => (
                   <div key={payment.id} className="flex justify-between text-sm text-hotel-success">
                     <span>{payment.paymentMethod} ({new Date(payment.paymentDate).toLocaleDateString()})</span>
-                    <span>-${parseFloat(payment.amount).toFixed(2)}</span>
+                    <span>-Rs {parseFloat(payment.amount).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -188,7 +188,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           <div className="flex justify-between font-bold text-xl">
             <span>Balance Due</span>
             <span data-testid="text-final-amount" className={balance > 0 ? "text-destructive" : "text-hotel-success"}>
-              ${balance.toFixed(2)}
+              Rs {balance.toFixed(2)}
             </span>
           </div>
         </CardContent>
@@ -273,7 +273,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           {balance > 0 && (
             <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
               <p className="text-sm font-medium text-destructive">
-                Outstanding Balance: ${balance.toFixed(2)}
+                Outstanding Balance: Rs {balance.toFixed(2)}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 Payment must be collected before guest departure
@@ -338,7 +338,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
           <Badge variant="outline">
-            Balance: ${balance.toFixed(2)}
+            Balance: Rs {balance.toFixed(2)}
           </Badge>
           <Badge variant={balance > 0 ? "destructive" : "default"}>
             {balance > 0 ? "Payment Required" : "Fully Paid"}

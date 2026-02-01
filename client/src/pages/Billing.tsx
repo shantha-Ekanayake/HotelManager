@@ -294,7 +294,7 @@ export default function Billing() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-total-revenue">
-              ${summaryLoading ? "..." : (billingSummary as any)?.summary?.totalRevenue?.toFixed(2) || "0.00"}
+              Rs {summaryLoading ? "..." : (billingSummary as any)?.summary?.totalRevenue?.toFixed(2) || "0.00"}
             </div>
             <p className="text-xs text-muted-foreground">All completed transactions</p>
           </CardContent>
@@ -307,7 +307,7 @@ export default function Billing() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-outstanding-balance">
-              ${summaryLoading ? "..." : (billingSummary as any)?.summary?.totalOutstanding?.toFixed(2) || "0.00"}
+              Rs {summaryLoading ? "..." : (billingSummary as any)?.summary?.totalOutstanding?.toFixed(2) || "0.00"}
             </div>
             <p className="text-xs text-muted-foreground">Unpaid amounts</p>
           </CardContent>
@@ -333,7 +333,7 @@ export default function Billing() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-today-charges">
-              ${summaryLoading ? "..." : (billingSummary as any)?.summary?.totalCharges?.toFixed(2) || "0.00"}
+              Rs {summaryLoading ? "..." : (billingSummary as any)?.summary?.totalCharges?.toFixed(2) || "0.00"}
             </div>
             <p className="text-xs text-muted-foreground">Posted today</p>
           </CardContent>
@@ -390,16 +390,16 @@ export default function Billing() {
                   <div className="text-xs text-muted-foreground space-y-1">
                     <div className="flex justify-between">
                       <span>Charges:</span>
-                      <span className="font-medium">${parseFloat(folio.totalCharges).toFixed(2)}</span>
+                      <span className="font-medium">Rs {parseFloat(folio.totalCharges).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Payments:</span>
-                      <span className="font-medium">${parseFloat(folio.totalPayments).toFixed(2)}</span>
+                      <span className="font-medium">Rs {parseFloat(folio.totalPayments).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Balance:</span>
                       <span className={`font-medium ${parseFloat(folio.balance) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        ${parseFloat(folio.balance).toFixed(2)}
+                        Rs {parseFloat(folio.balance).toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -489,13 +489,13 @@ export default function Billing() {
                                 )}
                               </div>
                               <span className="font-medium text-lg">
-                                ${parseFloat(charge.totalAmount).toFixed(2)}
+                                Rs {parseFloat(charge.totalAmount).toFixed(2)}
                               </span>
                             </div>
                             <div className="text-sm text-muted-foreground">
                               <div className="flex justify-between">
-                                <span>Amount: ${parseFloat(charge.amount).toFixed(2)}</span>
-                                <span>Tax: ${parseFloat(charge.taxAmount).toFixed(2)}</span>
+                                <span>Amount: Rs {parseFloat(charge.amount).toFixed(2)}</span>
+                                <span>Tax: Rs {parseFloat(charge.taxAmount).toFixed(2)}</span>
                               </div>
                               <div className="flex justify-between mt-1">
                                 <span>Posted: {format(new Date(charge.postingDate), "MMM dd, yyyy")}</span>
@@ -528,7 +528,7 @@ export default function Billing() {
                                 {getPaymentStatusBadge(payment.status)}
                               </div>
                               <span className="font-medium text-lg">
-                                ${parseFloat(payment.amount).toFixed(2)}
+                                Rs {parseFloat(payment.amount).toFixed(2)}
                               </span>
                             </div>
                             <div className="text-sm text-muted-foreground">

@@ -99,10 +99,11 @@ export default function FinancialReports() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', { 
+    return new Intl.NumberFormat('en-LK', { 
       style: 'currency', 
-      currency: 'USD' 
-    }).format(amount);
+      currency: 'LKR',
+      currencyDisplay: 'symbol'
+    }).format(amount).replace('LKR', 'Rs.');
   };
 
   if (dashboardError) {
@@ -178,12 +179,66 @@ export default function FinancialReports() {
       </Card>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
           <TabsTrigger value="folios" data-testid="tab-folios">Folios</TabsTrigger>
           <TabsTrigger value="charges" data-testid="tab-charges">Charges</TabsTrigger>
           <TabsTrigger value="payments" data-testid="tab-payments">Payments</TabsTrigger>
+          <TabsTrigger value="pl" data-testid="tab-pl">P&L</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="pl" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChart className="h-5 w-5" />
+                Profit & Loss Statement (Estimated)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold border-b pb-2">Revenue</h3>
+                  <div className="flex justify-between items-center py-1">
+                    <span>Room Revenue</span>
+                    <span className="font-medium">{formatCurrency((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span>Other Revenue</span>
+                    <span className="font-medium">{formatCurrency(0)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 font-bold">
+                    <span>Total Revenue</span>
+                    <span>{formatCurrency((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0)}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold border-b pb-2">Expenses (Estimated)</h3>
+                  <div className="flex justify-between items-center py-1">
+                    <span>Operating Costs (30%)</span>
+                    <span className="text-red-600">({formatCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.3)})</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span>Maintenance & Utilities (10%)</span>
+                    <span className="text-red-600">({formatCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.1)})</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 font-bold">
+                    <span>Total Expenses</span>
+                    <span className="text-red-600">({formatCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.4)})</span>
+                  </div>
+                </div>
+
+                <div className="pt-4 mt-4 border-t-2 border-primary/20">
+                  <div className="flex justify-between items-center text-xl font-bold">
+                    <span>Net Profit</span>
+                    <span className="text-green-600">{formatCurrency(((dashboardData as any)?.dashboard?.summary?.totalRevenue || 0) * 0.6)}</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">

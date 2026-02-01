@@ -94,7 +94,7 @@ export default function ReservationCard({
             <div className="flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-semibold" data-testid={`text-total-amount-${id}`}>
-                ${(typeof totalAmount === 'string' ? parseFloat(totalAmount) : totalAmount).toFixed(2)}
+                Rs. {(typeof totalAmount === 'string' ? parseFloat(totalAmount) : totalAmount).toFixed(2)}
               </span>
             </div>
           </div>

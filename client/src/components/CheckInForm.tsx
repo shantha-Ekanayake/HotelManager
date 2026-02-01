@@ -47,7 +47,7 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
   });
 
   const checkInMutation = useMutation({
-    mutationFn: async (data: { roomId: string }) => {
+    mutationFn: async (data: { roomId: string, depositAmount: string, paymentMethod: string }) => {
       return await apiRequest("POST", `/api/reservations/${reservationId}/check-in`, data);
     },
     onSuccess: () => {
@@ -83,7 +83,11 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
       return;
     }
     
-    checkInMutation.mutate({ roomId: selectedRoomId });
+    checkInMutation.mutate({ 
+      roomId: selectedRoomId,
+      depositAmount: checkInDetails.depositAmount,
+      paymentMethod: checkInDetails.paymentMethod
+    });
   };
 
   const guest = guestData?.guest;
@@ -274,7 +278,7 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="depositAmount">Deposit Amount ($)</Label>
+              <Label htmlFor="depositAmount">Deposit Amount (Rs)</Label>
               <Input
                 id="depositAmount"
                 type="number"

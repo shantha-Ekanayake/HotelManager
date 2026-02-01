@@ -1,3 +1,4 @@
+import { useState } from "react";
 import StatsCards from "@/components/StatsCards";
 import ReservationCard, { type ReservationStatus } from "@/components/ReservationCard";
 import RoomStatusCard, { type RoomStatus } from "@/components/RoomStatusCard";
@@ -6,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { Users, Bed, DollarSign, Calendar, TrendingUp, Star, BarChart3, Clock } from "lucide-react";
 import { useLocation } from "wouter";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Dashboard Analytics Type
 interface DashboardAnalytics {
@@ -145,10 +147,11 @@ function useRoomStatus() {
 
 // Helper function to format currency
 function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat('en-LK', {
     style: 'currency',
-    currency: 'USD'
-  }).format(value);
+    currency: 'LKR',
+    currencyDisplay: 'symbol'
+  }).format(value).replace('LKR', 'Rs.');
 }
 
 // Helper function to format percentage
@@ -156,73 +159,34 @@ function formatPercentage(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-// Helper function to calculate percentage change
-function calculateChange(current: number | undefined, previous: number | undefined): number {
-  if (!current || !previous || previous === 0) return 0;
-  return ((current - previous) / previous) * 100;
-}
-
-// Helper function to format reservation dates
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
-}
-
-// Loading skeleton component for stats
-function StatsCardSkeleton() {
-  return (
-    <div className="space-y-3">
-      <Skeleton className="h-4 w-24" />
-      <Skeleton className="h-8 w-16" />
-      <Skeleton className="h-3 w-32" />
-    </div>
-  );
-}
-
-// Loading skeleton component for cards
-function DashboardCardSkeleton() {
-  return (
-    <Card>
-      <CardHeader>
-        <Skeleton className="h-5 w-32" />
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-20 w-full" />
-      </CardContent>
-    </Card>
-  );
-}
-
-// Helper function to calculate average for arrays with possible undefined/null values
-function calculateAverage(data: any[], key: string): number {
-  if (!data || data.length === 0) return 0;
-  const validValues = data
-    .map(item => typeof item[key] === 'string' ? parseFloat(item[key]) : item[key])
-    .filter(val => val !== null && val !== undefined && !isNaN(val));
-  
-  if (validValues.length === 0) return 0;
-  return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
-}
-
-// Helper function to calculate total for arrays with possible undefined/null values
-function calculateTotal(data: any[], key: string): number {
-  if (!data || data.length === 0) return 0;
-  return data
-    .map(item => typeof item[key] === 'string' ? parseFloat(item[key]) : item[key])
-    .filter(val => val !== null && val !== undefined && !isNaN(val))
-    .reduce((sum, val) => sum + val, 0);
-}
+// Currency Conversion State and Logic
+const exchangeRates: Record<string, number> = {
+  "LKR": 1,
+  "USD": 0.0033,
+  "EUR": 0.0031,
+  "GBP": 0.0026
+};
 
 export default function Dashboard() {
   const { data: analytics, isLoading: analyticsLoading, error: analyticsError } = useDashboardAnalytics();
   const { data: recentReservations, isLoading: reservationsLoading } = useRecentReservations();
   const { data: roomsData, isLoading: roomsLoading } = useRoomStatus();
   const [, setLocation] = useLocation();
+  const [targetCurrency, setTargetCurrency] = useState("LKR");
+
+  const convertAmount = (amount: number) => {
+    return amount * (exchangeRates[targetCurrency] || 1);
+  };
+
+  const formatWithCurrency = (amount: number) => {
+    const converted = convertAmount(amount);
+    if (targetCurrency === "LKR") return formatCurrency(amount);
+    
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: targetCurrency
+    }).format(converted);
+  };
 
   // Generate stats from analytics data
   const stats = analytics ? [
@@ -239,7 +203,7 @@ export default function Dashboard() {
     },
     {
       title: "Revenue Today",
-      value: analytics.todayMetrics ? formatCurrency(analytics.todayMetrics.totalRevenue) : "--",
+      value: analytics.todayMetrics ? formatWithCurrency(analytics.todayMetrics.totalRevenue) : "--",
       change: calculateChange(
         analytics.todayMetrics?.totalRevenue,
         analytics.yesterdayMetrics?.totalRevenue
@@ -249,8 +213,19 @@ export default function Dashboard() {
       color: "success" as const
     },
     {
+      title: "Profit (Est. 60%)",
+      value: analytics.todayMetrics ? formatWithCurrency(analytics.todayMetrics.totalRevenue * 0.6) : "--",
+      change: calculateChange(
+        analytics.todayMetrics?.totalRevenue,
+        analytics.yesterdayMetrics?.totalRevenue
+      ),
+      changeLabel: "from yesterday",
+      icon: <TrendingUp className="h-4 w-4" />,
+      color: "success" as const
+    },
+    {
       title: "ADR (Avg Daily Rate)",
-      value: analytics.todayMetrics ? formatCurrency(analytics.todayMetrics.adr) : "--",
+      value: analytics.todayMetrics ? formatWithCurrency(analytics.todayMetrics.adr) : "--",
       change: calculateChange(
         analytics.todayMetrics?.adr,
         analytics.yesterdayMetrics?.adr
@@ -272,17 +247,33 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6" data-testid="page-dashboard">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Real-time hotel management analytics and insights
-        </p>
-        {analyticsError && (
-          <div className="mt-2 text-sm text-destructive">
-            Unable to load analytics data. Please try refreshing the page.
-          </div>
-        )}
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Real-time hotel management analytics and insights
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Display Currency:</span>
+          <Select value={targetCurrency} onValueChange={setTargetCurrency}>
+            <SelectTrigger className="w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="LKR">LKR (Rs.)</SelectItem>
+              <SelectItem value="USD">USD ($)</SelectItem>
+              <SelectItem value="EUR">EUR (€)</SelectItem>
+              <SelectItem value="GBP">GBP (£)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+      {analyticsError && (
+        <div className="mt-2 text-sm text-destructive">
+          Unable to load analytics data. Please try refreshing the page.
+        </div>
+      )}
 
       {analyticsLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

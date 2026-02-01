@@ -1213,20 +1213,53 @@ export function registerReservationRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
-        const { roomId } = req.body;
+        const { roomId, depositAmount, paymentMethod } = req.body;
         
-        const reservation = await storage.updateReservation(id, {
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+
+        const updatedReservation = await storage.updateReservation(id, {
           status: "checked_in",
           roomId,
-          checkInTime: new Date()
+          checkInTime: new Date(),
+          depositAmount: depositAmount ? depositAmount.toString() : reservation.depositAmount,
+          depositPaid: !!depositAmount
         } as any);
         
         // Update room status to occupied
         if (roomId) {
           await storage.updateRoom(roomId, { status: "occupied" });
         }
+
+        // Ensure Folio exists and record payment if deposit provided
+        let folio = await storage.getFolioByReservation(id);
+        if (!folio) {
+          const folioData = {
+            reservationId: id,
+            guestId: reservation.guestId,
+            propertyId: reservation.propertyId,
+            status: "open" as const,
+            totalCharges: reservation.totalAmount,
+            totalPayments: "0",
+            balance: reservation.totalAmount
+          };
+          folio = await storage.createFolio(folioData);
+        }
+
+        if (depositAmount && parseFloat(depositAmount) > 0) {
+          await storage.createPayment({
+            folioId: folio.id,
+            amount: depositAmount.toString(),
+            paymentMethod: paymentMethod || "credit_card",
+            status: "completed",
+            paymentDate: new Date(),
+            postedBy: req.user?.id
+          });
+        }
         
-        res.json({ reservation });
+        res.json({ reservation: updatedReservation });
       } catch (error) {
         console.error("Check-in error:", error);
         res.status(500).json({ error: "Internal server error" });

@@ -812,18 +812,30 @@ export class DatabaseStorage implements IHMSStorage {
   async createFolio(folio: InsertFolio): Promise<Folio> {
     // Generate folio number
     const folioNumber = `F-${Date.now()}`;
-    const result = await db.insert(folios).values({
+    
+    const insertData = {
       ...folio,
-      folioNumber
-    }).returning();
+      folioNumber,
+      totalCharges: folio.totalCharges?.toString() || "0",
+      totalPayments: folio.totalPayments?.toString() || "0",
+      balance: folio.balance?.toString() || (folio.totalCharges?.toString() || "0")
+    };
+
+    const result = await db.insert(folios).values(insertData).returning();
     return result[0];
   }
 
   async updateFolio(id: string, folio: Partial<InsertFolio>): Promise<Folio> {
-    const result = await db.update(folios).set({
+    const updateData: any = {
       ...folio,
       updatedAt: new Date()
-    }).where(eq(folios.id, id)).returning();
+    };
+    
+    if (folio.totalCharges !== undefined) updateData.totalCharges = folio.totalCharges.toString();
+    if (folio.totalPayments !== undefined) updateData.totalPayments = folio.totalPayments.toString();
+    if (folio.balance !== undefined) updateData.balance = folio.balance.toString();
+
+    const result = await db.update(folios).set(updateData).where(eq(folios.id, id)).returning();
     return result[0];
   }
 
@@ -841,7 +853,21 @@ export class DatabaseStorage implements IHMSStorage {
 
   async createCharge(charge: InsertCharge): Promise<Charge> {
     const result = await db.insert(charges).values(charge).returning();
-    return result[0];
+    const newCharge = result[0];
+    
+    // Update folio balance
+    const folio = await this.getFolio(newCharge.folioId);
+    if (folio) {
+      const totalCharges = (parseFloat(folio.totalCharges.toString()) + parseFloat(newCharge.totalAmount.toString())).toString();
+      const balance = (parseFloat(totalCharges) - parseFloat(folio.totalPayments.toString())).toString();
+      
+      await this.updateFolio(folio.id, {
+        totalCharges,
+        balance
+      });
+    }
+    
+    return newCharge;
   }
 
   async updateCharge(id: string, charge: Partial<InsertCharge>): Promise<Charge> {
@@ -873,7 +899,21 @@ export class DatabaseStorage implements IHMSStorage {
 
   async createPayment(payment: InsertPayment): Promise<Payment> {
     const result = await db.insert(payments).values(payment).returning();
-    return result[0];
+    const newPayment = result[0];
+    
+    // Update folio total payments and balance
+    const folio = await this.getFolio(newPayment.folioId);
+    if (folio) {
+      const totalPayments = (parseFloat(folio.totalPayments.toString()) + parseFloat(newPayment.amount.toString())).toString();
+      const balance = (parseFloat(folio.totalCharges.toString()) - parseFloat(totalPayments)).toString();
+      
+      await this.updateFolio(folio.id, {
+        totalPayments,
+        balance
+      });
+    }
+    
+    return newPayment;
   }
 
   async updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment> {
