@@ -37,7 +37,8 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
     folio: Folio & { charges: Charge[]; payments: Payment[] };
   }>({
     queryKey: ["/api/front-desk/reservation", reservationId, "folio"],
-    enabled: !!reservationId
+    enabled: !!reservationId,
+    retry: 1
   });
 
   const { data: guestData, isLoading: guestLoading } = useQuery<{ guest: Guest }>({

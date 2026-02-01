@@ -222,7 +222,10 @@ export default function FrontDesk() {
                             />
                             <Button 
                               size="sm"
-                              onClick={() => initiateCheckOut(reservation.id)}
+                              onClick={() => {
+                                setSelectedReservationId(reservation.id);
+                                setActiveTab("checkout");
+                              }}
                               data-testid={`button-checkout-${reservation.id}`}
                             >
                               Check Out
