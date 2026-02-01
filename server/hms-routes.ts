@@ -1254,7 +1254,6 @@ export function registerReservationRoutes(app: Express) {
             amount: depositAmount.toString(),
             paymentMethod: paymentMethod || "credit_card",
             status: "completed",
-            paymentDate: new Date(),
             postedBy: req.user?.id
           });
         }

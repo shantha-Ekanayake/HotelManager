@@ -679,7 +679,7 @@ export default function Rooms() {
                         <Users className="h-4 w-4" />
                         Max {roomType.maxOccupancy} guests
                       </span>
-                      <span className="font-semibold text-primary">{formatWithCurrency(typeof roomType.baseRate === 'string' ? parseFloat(roomType.baseRate) : roomType.baseRate)}/night</span>
+                      <span className="font-semibold text-primary">{formatWithCurrency(typeof roomType.baseRate === 'string' ? parseFloat(roomType.baseRate) : (roomType.baseRate as number))}/night</span>
                     </div>
                     {roomType.amenities && (roomType.amenities as string[]).length > 0 && (
                       <div className="flex flex-wrap gap-1">
@@ -778,8 +778,8 @@ export default function Rooms() {
                           description: plan.description || "",
                           isRefundable: plan.isRefundable,
                           cancellationPolicy: plan.cancellationPolicy || "",
-                          minLengthOfStay: plan.minLengthOfStay || null,
-                          maxLengthOfStay: plan.maxLengthOfStay || null,
+                          minLengthOfStay: plan.minLengthOfStay as any,
+                          maxLengthOfStay: plan.maxLengthOfStay as any,
                         });
                         setIsAddRatePlanOpen(true);
                       }}
