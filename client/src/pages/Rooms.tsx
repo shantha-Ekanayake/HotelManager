@@ -758,8 +758,8 @@ export default function Rooms() {
                           description: plan.description || "",
                           isRefundable: plan.isRefundable,
                           cancellationPolicy: plan.cancellationPolicy || "",
-                          minLengthOfStay: plan.minLengthOfStay || undefined,
-                          maxLengthOfStay: plan.maxLengthOfStay || undefined,
+                          minLengthOfStay: plan.minLengthOfStay ?? null,
+                          maxLengthOfStay: plan.maxLengthOfStay ?? null,
                         });
                         setIsAddRatePlanOpen(true);
                       }}
