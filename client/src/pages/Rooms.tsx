@@ -303,7 +303,7 @@ export default function Rooms() {
   const addRoomTypeMutation = useMutation({
     mutationFn: async (data: z.infer<typeof addRoomTypeSchema>) => {
       if (selectedRoomType) {
-        return apiRequest('PATCH', `/api/room-types/${selectedRoomType.id}`, data);
+        return apiRequest('PUT', `/api/room-types/${selectedRoomType.id}`, data);
       }
       return apiRequest('POST', `/api/properties/${propertyId}/room-types`, data);
     },
