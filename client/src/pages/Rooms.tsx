@@ -158,6 +158,7 @@ export default function Rooms() {
   const [isRoomDetailsOpen, setIsRoomDetailsOpen] = useState(false);
   const [isAddRoomOpen, setIsAddRoomOpen] = useState(false);
   const [isAddRoomTypeOpen, setIsAddRoomTypeOpen] = useState(false);
+  const [selectedRoomType, setSelectedRoomType] = useState<RoomType | null>(null);
   const [isAddRatePlanOpen, setIsAddRatePlanOpen] = useState(false);
   const [selectedRatePlan, setSelectedRatePlan] = useState<RatePlan | null>(null);
   const [isBlockingRoomOpen, setIsBlockingRoomOpen] = useState(false);
@@ -301,19 +302,23 @@ export default function Rooms() {
 
   const addRoomTypeMutation = useMutation({
     mutationFn: async (data: z.infer<typeof addRoomTypeSchema>) => {
+      if (selectedRoomType) {
+        return apiRequest('PATCH', `/api/room-types/${selectedRoomType.id}`, data);
+      }
       return apiRequest('POST', `/api/properties/${propertyId}/room-types`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/room-types`] });
-      toast({ title: "Room type added successfully" });
+      toast({ title: selectedRoomType ? "Room type updated successfully" : "Room type added successfully" });
       setIsAddRoomTypeOpen(false);
+      setSelectedRoomType(null);
       roomTypeForm.reset();
     },
     onError: () => {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to add room type",
+        description: selectedRoomType ? "Failed to update room type" : "Failed to add room type",
       });
     },
   });
@@ -687,7 +692,22 @@ export default function Rooms() {
                       </div>
                     )}
                     <div className="flex gap-2 pt-2">
-                      <Button size="sm" variant="outline" className="flex-1" data-testid={`button-edit-room-type-${roomType.id}`}>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="flex-1" 
+                        data-testid={`button-edit-room-type-${roomType.id}`}
+                        onClick={() => {
+                          setSelectedRoomType(roomType);
+                          roomTypeForm.reset({
+                            name: roomType.name,
+                            description: roomType.description || "",
+                            maxOccupancy: roomType.maxOccupancy,
+                            baseRate: typeof roomType.baseRate === 'string' ? parseFloat(roomType.baseRate) : roomType.baseRate,
+                          });
+                          setIsAddRoomTypeOpen(true);
+                        }}
+                      >
                         <Settings className="h-4 w-4 mr-1" />
                         Edit
                       </Button>
@@ -1001,10 +1021,16 @@ export default function Rooms() {
       </Dialog>
 
       {/* Add Room Type Dialog */}
-      <Dialog open={isAddRoomTypeOpen} onOpenChange={setIsAddRoomTypeOpen}>
+      <Dialog open={isAddRoomTypeOpen} onOpenChange={(open) => {
+        setIsAddRoomTypeOpen(open);
+        if (!open) {
+          setSelectedRoomType(null);
+          roomTypeForm.reset({ name: "", description: "", maxOccupancy: 2, baseRate: 100 });
+        }
+      }}>
         <DialogContent data-testid="dialog-add-room-type">
           <DialogHeader>
-            <DialogTitle>Add Room Type</DialogTitle>
+            <DialogTitle>{selectedRoomType ? "Edit Room Type" : "Add Room Type"}</DialogTitle>
           </DialogHeader>
           <Form {...roomTypeForm}>
             <form onSubmit={roomTypeForm.handleSubmit((data) => addRoomTypeMutation.mutate(data))} className="space-y-4">
@@ -1040,7 +1066,7 @@ export default function Rooms() {
                 <Button variant="outline" type="button" onClick={() => setIsAddRoomTypeOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={addRoomTypeMutation.isPending} data-testid="button-submit-add-room-type">
                   {addRoomTypeMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  Add Room Type
+                  {selectedRoomType ? "Update Room Type" : "Add Room Type"}
                 </Button>
               </DialogFooter>
             </form>
