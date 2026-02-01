@@ -778,8 +778,8 @@ export default function Rooms() {
                           description: plan.description || "",
                           isRefundable: plan.isRefundable,
                           cancellationPolicy: plan.cancellationPolicy || "",
-                          minLengthOfStay: plan.minLengthOfStay ?? null,
-                          maxLengthOfStay: plan.maxLengthOfStay ?? null,
+                          minLengthOfStay: plan.minLengthOfStay || null,
+                          maxLengthOfStay: plan.maxLengthOfStay || null,
                         });
                         setIsAddRatePlanOpen(true);
                       }}
