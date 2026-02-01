@@ -151,25 +151,29 @@ function calculateChange(current: number | undefined, previous: number | undefin
   return ((current - previous) / previous) * 100;
 }
 
-// Helper function to calculate average for arrays with possible undefined/null values
-function calculateAverage(data: any[], key: string): number {
-  if (!data || data.length === 0) return 0;
-  const validValues = data
-    .map(item => typeof item[key] === 'string' ? parseFloat(item[key]) : item[key])
-    .filter(val => val !== null && val !== undefined && !isNaN(val));
-  
-  if (validValues.length === 0) return 0;
-  return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
-}
+  const calculateTotal = (data: any[], key: string): number => {
+    if (!data || data.length === 0) return 0;
+    return data
+      .map(item => {
+        const val = item[key];
+        return typeof val === 'string' ? parseFloat(val) : val;
+      })
+      .filter(val => val !== null && val !== undefined && !isNaN(val))
+      .reduce((sum, val) => sum + val, 0);
+  };
 
-// Helper function to calculate total for arrays with possible undefined/null values
-function calculateTotal(data: any[], key: string): number {
-  if (!data || data.length === 0) return 0;
-  return data
-    .map(item => typeof item[key] === 'string' ? parseFloat(item[key]) : item[key])
-    .filter(val => val !== null && val !== undefined && !isNaN(val))
-    .reduce((sum, val) => sum + val, 0);
-}
+  const calculateAverage = (data: any[], key: string): number => {
+    if (!data || data.length === 0) return 0;
+    const validValues = data
+      .map(item => {
+        const val = item[key];
+        return typeof val === 'string' ? parseFloat(val) : val;
+      })
+      .filter(val => val !== null && val !== undefined && !isNaN(val));
+    
+    if (validValues.length === 0) return 0;
+    return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
+  };
 
 // Loading skeleton component for stats
 function StatsCardSkeleton() {
@@ -251,9 +255,10 @@ export default function Dashboard() {
   };
 
   const formatWithCurrency = (amount: number) => {
-    if (isNaN(amount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
-    const converted = convertAmount(amount);
-    if (targetCurrency === "LKR") return formatCurrency(amount);
+    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
+    const converted = convertAmount(rawAmount);
+    if (targetCurrency === "LKR") return formatCurrency(rawAmount);
     
     return new Intl.NumberFormat('en-US', {
       style: 'currency',

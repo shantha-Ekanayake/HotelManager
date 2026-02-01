@@ -188,6 +188,47 @@ export default function Rooms() {
     defaultValues: { name: "", description: "", isRefundable: true, cancellationPolicy: "" },
   });
 
+  const [targetCurrency, setTargetCurrency] = useState(() => {
+    return localStorage.getItem("preferred_currency") || "LKR";
+  });
+
+  const exchangeRates: Record<string, number> = {
+    "LKR": 1,
+    "USD": 0.0033,
+    "EUR": 0.0031,
+    "GBP": 0.0026
+  };
+
+  const convertAmount = (amount: number) => {
+    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(rawAmount)) return 0;
+    return rawAmount * (exchangeRates[targetCurrency] || 1);
+  };
+
+  const formatWithCurrency = (amount: number) => {
+    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
+    
+    const converted = convertAmount(rawAmount);
+    if (targetCurrency === "LKR") {
+      return new Intl.NumberFormat('en-LK', {
+        style: 'currency',
+        currency: 'LKR',
+        currencyDisplay: 'symbol'
+      }).format(rawAmount).replace('LKR', 'Rs.');
+    }
+    
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: targetCurrency
+    }).format(converted);
+  };
+
+  const handleCurrencyChange = (value: string) => {
+    setTargetCurrency(value);
+    localStorage.setItem("preferred_currency", value);
+  };
+
   const { data: userData } = useCurrentUser();
   const propertyId = userData?.user?.propertyId || "prop-demo";
   const userRole = userData?.user?.role || "";
@@ -438,6 +479,20 @@ export default function Rooms() {
             Manage room status and availability
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Display Currency:</span>
+          <Select value={targetCurrency} onValueChange={handleCurrencyChange}>
+            <SelectTrigger className="w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="LKR">LKR (Rs.)</SelectItem>
+              <SelectItem value="USD">USD ($)</SelectItem>
+              <SelectItem value="EUR">EUR (€)</SelectItem>
+              <SelectItem value="GBP">GBP (£)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         {isManagerOrAbove && (
           <Button data-testid="button-add-room" onClick={() => setIsAddRoomOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
@@ -607,7 +662,7 @@ export default function Rooms() {
                         <Users className="h-4 w-4" />
                         Max {roomType.maxOccupancy} guests
                       </span>
-                      <span className="font-semibold text-primary">${roomType.baseRate}/night</span>
+                      <span className="font-semibold text-primary">{formatWithCurrency(roomType.baseRate)}/night</span>
                     </div>
                     {roomType.amenities && (roomType.amenities as string[]).length > 0 && (
                       <div className="flex flex-wrap gap-1">
