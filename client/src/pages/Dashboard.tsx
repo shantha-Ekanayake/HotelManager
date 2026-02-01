@@ -207,8 +207,9 @@ function formatDate(dateString: string): string {
   });
 }
 
-// Helper function to format currency
+// Helper function to format currency with symbol
 function formatCurrency(value: number): string {
+  if (isNaN(value)) return "Rs. 0.00";
   return new Intl.NumberFormat('en-LK', {
     style: 'currency',
     currency: 'LKR',
@@ -218,6 +219,7 @@ function formatCurrency(value: number): string {
 
 // Helper function to format percentage
 function formatPercentage(value: number): string {
+  if (isNaN(value)) return "0%";
   return `${Math.round(value * 100)}%`;
 }
 
@@ -234,13 +236,22 @@ export default function Dashboard() {
   const { data: recentReservations, isLoading: reservationsLoading } = useRecentReservations();
   const { data: roomsData, isLoading: roomsLoading } = useRoomStatus();
   const [, setLocation] = useLocation();
-  const [targetCurrency, setTargetCurrency] = useState("LKR");
+  const [targetCurrency, setTargetCurrency] = useState(() => {
+    return localStorage.getItem("preferred_currency") || "LKR";
+  });
+
+  const handleCurrencyChange = (value: string) => {
+    setTargetCurrency(value);
+    localStorage.setItem("preferred_currency", value);
+  };
 
   const convertAmount = (amount: number) => {
+    if (isNaN(amount)) return 0;
     return amount * (exchangeRates[targetCurrency] || 1);
   };
 
   const formatWithCurrency = (amount: number) => {
+    if (isNaN(amount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
     const converted = convertAmount(amount);
     if (targetCurrency === "LKR") return formatCurrency(amount);
     
@@ -276,7 +287,7 @@ export default function Dashboard() {
     },
     {
       title: "Profit (Est. 60%)",
-      value: analytics.todayMetrics ? formatWithCurrency(analytics.todayMetrics.totalRevenue * 0.6) : "--",
+      value: analytics.todayMetrics ? formatWithCurrency((analytics.todayMetrics.totalRevenue || 0) * 0.6) : "--",
       change: calculateChange(
         analytics.todayMetrics?.totalRevenue,
         analytics.yesterdayMetrics?.totalRevenue
@@ -298,7 +309,7 @@ export default function Dashboard() {
     },
     {
       title: "Guest Satisfaction",
-      value: analytics.guestSatisfaction ? `${Math.round(analytics.guestSatisfaction.overallRating * 10)/10}/5` : "--",
+      value: analytics.guestSatisfaction ? `${Math.round((analytics.guestSatisfaction.overallRating || 0) * 10)/10}/5` : "--",
       change: 0,
       changeLabel: `${analytics.guestSatisfaction?.totalResponses || 0} reviews`,
       icon: <Star className="h-4 w-4" />,
@@ -318,7 +329,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Display Currency:</span>
-          <Select value={targetCurrency} onValueChange={setTargetCurrency}>
+          <Select value={targetCurrency} onValueChange={handleCurrencyChange}>
             <SelectTrigger className="w-[100px]">
               <SelectValue />
             </SelectTrigger>

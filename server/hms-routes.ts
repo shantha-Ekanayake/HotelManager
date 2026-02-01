@@ -2666,16 +2666,38 @@ export function registerBillingRoutes(app: Express) {
           return res.status(404).json({ error: "Property not found" });
         }
 
-        // TODO: Implement actual billing summary calculations
-        // For now, return mock data structure
-        const summary = {
+        // Calculate actual billing summary
+        const allFolios = await storage.getReservationsByProperty(propertyId)
+          .then(async reservations => {
+            const folios = [];
+            for (const res of reservations) {
+              const folio = await storage.getFolioByReservation(res.id);
+              if (folio) folios.push(folio);
+            }
+            return folios;
+          });
+
+        const summary = allFolios.reduce((acc, folio) => {
+          const charges = parseFloat(folio.totalCharges.toString());
+          const payments = parseFloat(folio.totalPayments.toString());
+          const balance = parseFloat(folio.balance.toString());
+          
+          acc.totalCharges += charges;
+          acc.totalPayments += payments;
+          acc.totalOutstanding += balance > 0 ? balance : 0;
+          if (folio.status === 'open') acc.openFolios++;
+          
+          return acc;
+        }, {
           totalRevenue: 0,
           totalOutstanding: 0,
           totalRefunds: 0,
           totalCharges: 0,
           totalPayments: 0,
           openFolios: 0
-        };
+        });
+
+        summary.totalRevenue = summary.totalPayments;
         
         res.json({ summary });
       } catch (error) {

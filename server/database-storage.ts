@@ -858,8 +858,12 @@ export class DatabaseStorage implements IHMSStorage {
     // Update folio balance
     const folio = await this.getFolio(newCharge.folioId);
     if (folio) {
-      const totalCharges = (parseFloat(folio.totalCharges.toString()) + parseFloat(newCharge.totalAmount.toString())).toString();
-      const balance = (parseFloat(totalCharges) - parseFloat(folio.totalPayments.toString())).toString();
+      const currentCharges = parseFloat(folio.totalCharges.toString());
+      const chargeAmount = parseFloat(newCharge.totalAmount.toString());
+      const totalCharges = (currentCharges + chargeAmount).toFixed(2);
+      
+      const currentPayments = parseFloat(folio.totalPayments.toString());
+      const balance = (parseFloat(totalCharges) - currentPayments).toFixed(2);
       
       await this.updateFolio(folio.id, {
         totalCharges,
@@ -882,7 +886,23 @@ export class DatabaseStorage implements IHMSStorage {
       voidedBy,
       voidedAt: new Date()
     }).where(eq(charges.id, id)).returning();
-    return result[0];
+    
+    // Recalculate folio balance
+    const voidedCharge = result[0];
+    const folio = await this.getFolio(voidedCharge.folioId);
+    if (folio) {
+      const allCharges = await this.getChargesByFolio(folio.id);
+      const totalCharges = allCharges.reduce((sum, c) => sum + parseFloat(c.totalAmount.toString()), 0).toFixed(2);
+      const totalPayments = parseFloat(folio.totalPayments.toString());
+      const balance = (parseFloat(totalCharges) - totalPayments).toFixed(2);
+      
+      await this.updateFolio(folio.id, {
+        totalCharges,
+        balance
+      });
+    }
+    
+    return voidedCharge;
   }
 
   // Payment Management
@@ -904,8 +924,12 @@ export class DatabaseStorage implements IHMSStorage {
     // Update folio total payments and balance
     const folio = await this.getFolio(newPayment.folioId);
     if (folio) {
-      const totalPayments = (parseFloat(folio.totalPayments.toString()) + parseFloat(newPayment.amount.toString())).toString();
-      const balance = (parseFloat(folio.totalCharges.toString()) - parseFloat(totalPayments)).toString();
+      const currentPayments = parseFloat(folio.totalPayments.toString());
+      const paymentAmount = parseFloat(newPayment.amount.toString());
+      const totalPayments = (currentPayments + paymentAmount).toFixed(2);
+      
+      const currentCharges = parseFloat(folio.totalCharges.toString());
+      const balance = (currentCharges - parseFloat(totalPayments)).toFixed(2);
       
       await this.updateFolio(folio.id, {
         totalPayments,
