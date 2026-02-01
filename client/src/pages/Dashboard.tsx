@@ -145,6 +145,68 @@ function useRoomStatus() {
   });
 }
 
+// Helper function to calculate percentage change
+function calculateChange(current: number | undefined, previous: number | undefined): number {
+  if (!current || !previous || previous === 0) return 0;
+  return ((current - previous) / previous) * 100;
+}
+
+// Helper function to calculate average for arrays with possible undefined/null values
+function calculateAverage(data: any[], key: string): number {
+  if (!data || data.length === 0) return 0;
+  const validValues = data
+    .map(item => typeof item[key] === 'string' ? parseFloat(item[key]) : item[key])
+    .filter(val => val !== null && val !== undefined && !isNaN(val));
+  
+  if (validValues.length === 0) return 0;
+  return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
+}
+
+// Helper function to calculate total for arrays with possible undefined/null values
+function calculateTotal(data: any[], key: string): number {
+  if (!data || data.length === 0) return 0;
+  return data
+    .map(item => typeof item[key] === 'string' ? parseFloat(item[key]) : item[key])
+    .filter(val => val !== null && val !== undefined && !isNaN(val))
+    .reduce((sum, val) => sum + val, 0);
+}
+
+// Loading skeleton component for stats
+function StatsCardSkeleton() {
+  return (
+    <div className="space-y-3">
+      <Skeleton className="h-4 w-24" />
+      <Skeleton className="h-8 w-16" />
+      <Skeleton className="h-3 w-32" />
+    </div>
+  );
+}
+
+// Loading skeleton component for cards
+function DashboardCardSkeleton() {
+  return (
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-5 w-32" />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </CardContent>
+    </Card>
+  );
+}
+
+// Helper function to format reservation dates
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+}
+
 // Helper function to format currency
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-LK', {
