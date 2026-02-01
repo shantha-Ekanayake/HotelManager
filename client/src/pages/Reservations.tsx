@@ -27,7 +27,13 @@ export default function Reservations() {
     enabled: !!user?.propertyId,
   });
 
+  const { data: guestsData } = useQuery<{ guests: any[] }>({
+    queryKey: ["/api/guests"],
+  });
+
   const reservations = data?.reservations || [];
+  const guests = guestsData?.guests || [];
+  const guestMap = new Map(guests.map(g => [g.id, `${g.firstName} ${g.lastName}`]));
 
   const filteredReservations = reservations.filter(reservation => {
     const matchesSearch = 
@@ -102,7 +108,7 @@ export default function Reservations() {
               <ReservationCard
                 key={reservation.id}
                 id={reservation.confirmationNumber}
-                guestName={`Guest #${reservation.guestId.substring(0, 8)}`}
+                guestName={guestMap.get(reservation.guestId) || `Guest #${reservation.guestId.substring(0, 8)}`}
                 roomNumber={reservation.roomId || "TBA"}
                 roomType="Room"
                 checkIn={new Date(reservation.arrivalDate).toLocaleDateString()}

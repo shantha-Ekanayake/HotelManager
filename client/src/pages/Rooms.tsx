@@ -38,8 +38,8 @@ const addRoomTypeSchema = z.object({
 const addRatePlanSchema = z.object({
   name: z.string().min(1, "Rate plan name is required"),
   description: z.string().optional(),
-  minLengthOfStay: z.number().optional(),
-  maxLengthOfStay: z.number().optional(),
+  minLengthOfStay: z.number().optional().nullable(),
+  maxLengthOfStay: z.number().optional().nullable(),
   isRefundable: z.boolean(),
   cancellationPolicy: z.string().optional(),
 });
@@ -159,6 +159,7 @@ export default function Rooms() {
   const [isAddRoomOpen, setIsAddRoomOpen] = useState(false);
   const [isAddRoomTypeOpen, setIsAddRoomTypeOpen] = useState(false);
   const [isAddRatePlanOpen, setIsAddRatePlanOpen] = useState(false);
+  const [selectedRatePlan, setSelectedRatePlan] = useState<RatePlan | null>(null);
   const [isBlockingRoomOpen, setIsBlockingRoomOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<RoomStatus>("available");
   const [statusNotes, setStatusNotes] = useState("");
@@ -185,7 +186,14 @@ export default function Rooms() {
 
   const ratePlanForm = useForm({
     resolver: zodResolver(addRatePlanSchema),
-    defaultValues: { name: "", description: "", isRefundable: true, cancellationPolicy: "" },
+    defaultValues: { 
+      name: "", 
+      description: "", 
+      isRefundable: true, 
+      cancellationPolicy: "",
+      minLengthOfStay: null,
+      maxLengthOfStay: null
+    },
   });
 
   const [targetCurrency, setTargetCurrency] = useState(() => {
@@ -312,19 +320,23 @@ export default function Rooms() {
 
   const addRatePlanMutation = useMutation({
     mutationFn: async (data: z.infer<typeof addRatePlanSchema>) => {
+      if (selectedRatePlan) {
+        return apiRequest('PATCH', `/api/rate-plans/${selectedRatePlan.id}`, data);
+      }
       return apiRequest('POST', `/api/properties/${propertyId}/rate-plans`, { ...data, isActive: true });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rate-plans`] });
-      toast({ title: "Rate plan added successfully" });
+      toast({ title: selectedRatePlan ? "Rate plan updated successfully" : "Rate plan added successfully" });
       setIsAddRatePlanOpen(false);
+      setSelectedRatePlan(null);
       ratePlanForm.reset();
     },
     onError: () => {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to add rate plan",
+        description: selectedRatePlan ? "Failed to update rate plan" : "Failed to add rate plan",
       });
     },
   });
@@ -662,7 +674,7 @@ export default function Rooms() {
                         <Users className="h-4 w-4" />
                         Max {roomType.maxOccupancy} guests
                       </span>
-                      <span className="font-semibold text-primary">{formatWithCurrency(roomType.baseRate)}/night</span>
+                      <span className="font-semibold text-primary">{formatWithCurrency(typeof roomType.baseRate === 'string' ? parseFloat(roomType.baseRate) : roomType.baseRate)}/night</span>
                     </div>
                     {roomType.amenities && (roomType.amenities as string[]).length > 0 && (
                       <div className="flex flex-wrap gap-1">
@@ -734,7 +746,24 @@ export default function Rooms() {
                   </div>
                   <p className="text-xs text-muted-foreground">{plan.cancellationPolicy}</p>
                   <div className="flex gap-2 pt-2">
-                    <Button size="sm" variant="outline" className="flex-1" data-testid={`button-edit-rate-plan-${plan.id}`}>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="flex-1" 
+                      data-testid={`button-edit-rate-plan-${plan.id}`}
+                      onClick={() => {
+                        setSelectedRatePlan(plan);
+                        ratePlanForm.reset({
+                          name: plan.name,
+                          description: plan.description || "",
+                          isRefundable: plan.isRefundable,
+                          cancellationPolicy: plan.cancellationPolicy || "",
+                          minLengthOfStay: plan.minLengthOfStay || undefined,
+                          maxLengthOfStay: plan.maxLengthOfStay || undefined,
+                        });
+                        setIsAddRatePlanOpen(true);
+                      }}
+                    >
                       <Settings className="h-4 w-4 mr-1" />
                       Edit
                     </Button>
@@ -1020,10 +1049,16 @@ export default function Rooms() {
       </Dialog>
 
       {/* Add Rate Plan Dialog */}
-      <Dialog open={isAddRatePlanOpen} onOpenChange={setIsAddRatePlanOpen}>
+      <Dialog open={isAddRatePlanOpen} onOpenChange={(open) => {
+        setIsAddRatePlanOpen(open);
+        if (!open) {
+          setSelectedRatePlan(null);
+          ratePlanForm.reset({ name: "", description: "", isRefundable: true, cancellationPolicy: "" });
+        }
+      }}>
         <DialogContent data-testid="dialog-add-rate-plan">
           <DialogHeader>
-            <DialogTitle>Add Rate Plan</DialogTitle>
+            <DialogTitle>{selectedRatePlan ? "Edit Rate Plan" : "Add Rate Plan"}</DialogTitle>
           </DialogHeader>
           <Form {...ratePlanForm}>
             <form onSubmit={ratePlanForm.handleSubmit((data) => addRatePlanMutation.mutate(data))} className="space-y-4">
@@ -1038,6 +1073,45 @@ export default function Rooms() {
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl><Textarea placeholder="Rate plan description..." {...field} data-testid="input-rate-plan-description" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={ratePlanForm.control} name="minLengthOfStay" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Min Length of Stay (Nights)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      min="1" 
+                      placeholder="e.g., 1" 
+                      value={field.value || ""} 
+                      onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)} 
+                      data-testid="input-min-stay" 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={ratePlanForm.control} name="maxLengthOfStay" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Max Length of Stay (Nights)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      min="1" 
+                      placeholder="e.g., 30" 
+                      value={field.value || ""} 
+                      onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)} 
+                      data-testid="input-max-stay" 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={ratePlanForm.control} name="cancellationPolicy" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Cancellation Policy</FormLabel>
+                  <FormControl><Textarea placeholder="Cancellation policy details..." {...field} data-testid="input-cancellation-policy" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -1062,7 +1136,7 @@ export default function Rooms() {
                 <Button variant="outline" type="button" onClick={() => setIsAddRatePlanOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={addRatePlanMutation.isPending} data-testid="button-submit-add-rate-plan">
                   {addRatePlanMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  Add Rate Plan
+                  {selectedRatePlan ? "Update Rate Plan" : "Add Rate Plan"}
                 </Button>
               </DialogFooter>
             </form>
