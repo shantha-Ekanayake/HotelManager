@@ -34,12 +34,10 @@ import { useToast } from "@/hooks/use-toast";
 
 interface Room {
   id: string;
-  number: string;
-  floor: number;
+  roomNumber: string;
+  floor: number | null;
   status: 'available' | 'occupied' | 'dirty' | 'clean' | 'inspected' | 'out_of_order' | 'maintenance';
-  roomType: {
-    name: string;
-  };
+  roomTypeId: string;
 }
 
 interface HousekeepingTask {
@@ -390,7 +388,7 @@ export default function Housekeeping() {
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-2">
                             <Bed className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">Room {task.room?.number || task.roomId}</span>
+                            <span className="font-medium">Room {task.room?.roomNumber || task.roomId}</span>
                           </div>
                           <span className="text-sm text-muted-foreground">({task.taskType})</span>
                           {getStatusBadge(task.status)}
@@ -496,7 +494,7 @@ export default function Housekeeping() {
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-2">
                             <Bed className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">Room {task.room?.number || task.roomId}</span>
+                            <span className="font-medium">Room {task.room?.roomNumber || task.roomId}</span>
                           </div>
                           <span className="text-sm text-muted-foreground">({task.taskType})</span>
                           {getStatusBadge(task.status)}
@@ -578,7 +576,7 @@ export default function Housekeeping() {
                           <SelectContent>
                             {(roomsData?.rooms || []).map((room: Room) => (
                               <SelectItem key={room.id} value={room.id}>
-                                Room {room.number} ({room.roomType.name})
+                                Room {room.roomNumber}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -737,7 +735,7 @@ export default function Housekeeping() {
           </DialogHeader>
           <div className="space-y-4">
             <p>
-              Inspecting task for <strong>Room {selectedTask?.room?.number || selectedTask?.roomId}</strong>
+              Inspecting task for <strong>Room {selectedTask?.room?.roomNumber || selectedTask?.roomId}</strong>
             </p>
             <Textarea 
               placeholder="Inspection notes and feedback..."
