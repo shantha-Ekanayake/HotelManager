@@ -64,6 +64,7 @@ interface HousekeepingTask {
 const taskFormSchema = insertHousekeepingTaskSchema.extend({
   roomId: z.string().min(1, "Room is required"),
   taskType: z.string().min(1, "Task type is required"),
+  estimatedDuration: z.coerce.number().int().positive().optional().nullable(),
 });
 
 export default function Housekeeping() {
@@ -139,14 +140,12 @@ export default function Housekeeping() {
     },
   });
 
-  // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: z.infer<typeof taskFormSchema>) => {
-      const response = await apiRequest("POST", "/api/housekeeping-tasks", {
+      await apiRequest("POST", "/api/housekeeping-tasks", {
         ...data,
         propertyId,
       });
-      return response.json();
     },
     onSuccess: () => {
       toast({ title: "Task created successfully" });
@@ -185,7 +184,13 @@ export default function Housekeeping() {
   });
 
   const handleCreateTask = (data: z.infer<typeof taskFormSchema>) => {
-    createTaskMutation.mutate(data);
+    const cleanedData = {
+      ...data,
+      estimatedDuration: data.estimatedDuration ? Number(data.estimatedDuration) : null,
+      assignedTo: data.assignedTo || null,
+      notes: data.notes || null,
+    };
+    createTaskMutation.mutate(cleanedData as any);
   };
 
   const handleStartTask = (taskId: string) => {

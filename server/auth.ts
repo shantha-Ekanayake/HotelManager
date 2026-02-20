@@ -30,7 +30,7 @@ export const USER_ROLES = {
     permissions: [
       "users.manage", "properties.manage", "reports.view.all", "reports.view", "reports.view.financial",
       "reservations.manage", "guests.manage", "rooms.view", "rooms.manage",
-      "billing.manage", "housekeeping.manage", "maintenance.manage", "rates.manage",
+      "billing.manage", "housekeeping.manage", "housekeeping.tasks.view", "housekeeping.tasks.update", "maintenance.manage", "rates.manage",
       "front_desk.manage", "front_desk.view", "rooms.status.update", "service_requests.view", "service_requests.manage",
       "check_in.process", "check_out.process", "folios.manage", "payments.process"
     ]
@@ -48,7 +48,7 @@ export const USER_ROLES = {
     description: "Full property management for assigned property",
     permissions: [
       "reservations.manage", "guests.manage", "rooms.view", "rooms.manage", "properties.view", "billing.view",
-      "housekeeping.manage", "maintenance.manage", "reports.view.property",
+      "housekeeping.manage", "housekeeping.tasks.view", "housekeeping.tasks.update", "maintenance.manage", "reports.view.property",
       "reports.view.financial", "rates.view", "users.view.property", "front_desk.manage", "front_desk.view",
       "check_in.process", "check_out.process", "folios.manage", "payments.process"
     ]
