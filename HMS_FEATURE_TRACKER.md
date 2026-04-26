@@ -327,47 +327,61 @@
 ---
 
 ### 7. Billing Module
-**Status**: ⚠️ **PARTIAL** - 55% Complete
+**Status**: ✅ **MOSTLY COMPLETE** - 85% Complete
 
 #### Data & API Layer (100% Complete)
 - [x] Folio data model and schema
-- [x] Charge data model
-- [x] Payment data model
+- [x] Charge data model (with void fields)
+- [x] Payment data model (with refund fields)
 - [x] Automatic folio creation on reservation (FLO-xxxxx format)
+- [x] GET /api/folios/:id - Get folio details
 - [x] GET /api/folios/:id/charges - Get charges for folio
 - [x] GET /api/folios/:id/payments - Get payments for folio
 - [x] GET /api/guests/:id/folios - Get folios for guest
 - [x] POST /api/charges - Post charge to folio
+- [x] POST /api/charges/:id/void - Void a charge
 - [x] POST /api/payments - Record payment
+- [x] PUT /api/payments/:id - Update payment (status, refund) with auto-conversion of date strings to Date
+- [x] PUT /api/folios/:id - Update folio (notes, status)
 - [x] GET /api/properties/:propertyId/billing/summary - Billing summary
 
-#### Frontend UI (65% Complete)
+#### Frontend UI (90% Complete)
 - [x] Billing & Folios page with summary dashboard
-- [x] Folio detail view UI (charges, payments, balance display)
+- [x] Folio detail view UI (charges, payments, balance, notes)
 - [x] Add charges to folio dialog (charge code, description, amount, tax)
-- [x] Payment processing UI dialog (amount, payment method, notes)
+- [x] Tax calculation engine (configurable tax rate %, auto-applied to amount)
+- [x] Discount application (LKR amount, deducted before tax)
+- [x] Auto-computed read-only Total Amount field in charge form
+- [x] Void charge UI with reason dialog (button on each non-voided charge)
+- [x] Voided charges visually distinguished (Voided badge + reason shown)
+- [x] Payment processing UI dialog (amount, payment method, notes) with pre-filled outstanding balance
 - [x] Multiple payment methods (cash, check, bank transfer, other — card processing requires Stripe integration)
-- [x] Billing summary cards (Total Revenue, Outstanding Balance, Open Folios, Today's Charges)
+- [x] Mark Pending payments as Completed (one-click action)
+- [x] Refund Completed payments dialog (refund amount + reason)
+- [x] Refunded payments visually distinguished (Refunded badge + amount + reason inline)
+- [x] Inline folio notes editor (Edit / Save / Cancel)
+- [x] Close Folio action (enabled only when balance == 0 and folio is open)
+- [x] Print Invoice — printable HTML view of full folio (charges, payments, totals, notes) auto-triggers window.print()
+- [x] Print Receipt — printable per-payment HTML view auto-triggers window.print()
+- [x] Billing summary cards (Total Revenue, Outstanding Balance, Open Folios, Total Charges)
 - [x] Folio search via guest search
 - [x] Folio status badges (Open, Closed, Transferred)
 - [x] Payment status badges (Completed, Pending, Failed, Refunded)
 - [x] Currency conversion (LKR, USD, EUR, GBP)
 - [x] Advance deposit handling (captured during check-in and walk-in)
+- [x] Partial payment handling (any payment amount accepted; balance tracked)
+- [x] Receipt printing (browser print)
+- [ ] Receipt emailing (requires email integration)
 - [ ] Split charges between folios
-- [ ] Partial payment handling
-- [ ] Invoice generation and printing
-- [ ] Tax calculation engine
-- [ ] Discount and promotion application
-- [ ] City tax/resort fee automation
+- [ ] City tax/resort fee automation (rule engine)
 - [ ] Credit limit management
 - [ ] Folio transfer between guests
 - [ ] Consolidated billing for groups
 - [ ] Payment gateway integration (Stripe)
-- [ ] Receipt printing/emailing
 
 **Priority**: Critical  
-**Dependencies**: Payment gateway integration (Stripe) for real payment processing  
-**Code Review Verified**: April 8, 2026
+**Dependencies**: Payment gateway integration (Stripe) for real payment processing; email service for receipt emailing  
+**Code Review Verified**: April 26, 2026
 
 ---
 

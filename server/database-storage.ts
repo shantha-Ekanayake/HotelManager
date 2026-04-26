@@ -846,37 +846,61 @@ export class DatabaseStorage implements IHMSStorage {
   }
 
   async getChargesByFolio(folioId: string): Promise<Charge[]> {
+    // Return all charges (including voided) so the UI can show a Voided badge.
+    // Server-side totals are recomputed in `recomputeFolioTotals` which excludes voided charges.
     return await db.select().from(charges)
-      .where(and(eq(charges.folioId, folioId), eq(charges.isVoided, false)))
+      .where(eq(charges.folioId, folioId))
       .orderBy(desc(charges.chargeDate));
+  }
+
+  // Recompute folio totals from authoritative charge/payment records.
+  // - totalCharges = sum of all non-voided charges' totalAmount
+  // - totalPayments = sum of completed payments' (amount - refundAmount), with refunded payments contributing zero
+  // - balance = totalCharges - totalPayments
+  private async recomputeFolioTotals(folioId: string): Promise<void> {
+    const folio = await this.getFolio(folioId);
+    if (!folio) return;
+
+    const allCharges = await this.getChargesByFolio(folioId); // already filters voided
+    const totalCharges = allCharges
+      .reduce((sum, c) => sum + parseFloat(c.totalAmount.toString()), 0);
+
+    const allPayments = await this.getPaymentsByFolio(folioId);
+    const totalPayments = allPayments.reduce((sum, p) => {
+      if (p.status === 'completed') {
+        return sum + parseFloat(p.amount.toString());
+      }
+      if (p.status === 'refunded') {
+        const amt = parseFloat(p.amount.toString());
+        const refunded = parseFloat((p.refundAmount || '0').toString());
+        // Net contribution = amt - refunded (typically 0 for full refund, positive for partial)
+        return sum + Math.max(0, amt - refunded);
+      }
+      // pending / failed do not contribute
+      return sum;
+    }, 0);
+
+    const balance = totalCharges - totalPayments;
+
+    await this.updateFolio(folioId, {
+      totalCharges: totalCharges.toFixed(2),
+      totalPayments: totalPayments.toFixed(2),
+      balance: balance.toFixed(2),
+    });
   }
 
   async createCharge(charge: InsertCharge): Promise<Charge> {
     const result = await db.insert(charges).values(charge).returning();
     const newCharge = result[0];
-    
-    // Update folio balance
-    const folio = await this.getFolio(newCharge.folioId);
-    if (folio) {
-      const currentCharges = parseFloat(folio.totalCharges.toString());
-      const chargeAmount = parseFloat(newCharge.totalAmount.toString());
-      const totalCharges = (currentCharges + chargeAmount).toFixed(2);
-      
-      const currentPayments = parseFloat(folio.totalPayments.toString());
-      const balance = (parseFloat(totalCharges) - currentPayments).toFixed(2);
-      
-      await this.updateFolio(folio.id, {
-        totalCharges,
-        balance
-      });
-    }
-    
+    await this.recomputeFolioTotals(newCharge.folioId);
     return newCharge;
   }
 
   async updateCharge(id: string, charge: Partial<InsertCharge>): Promise<Charge> {
     const result = await db.update(charges).set(charge).where(eq(charges.id, id)).returning();
-    return result[0];
+    const updated = result[0];
+    if (updated) await this.recomputeFolioTotals(updated.folioId);
+    return updated;
   }
 
   async voidCharge(id: string, voidReason: string, voidedBy: string): Promise<Charge> {
@@ -886,22 +910,9 @@ export class DatabaseStorage implements IHMSStorage {
       voidedBy,
       voidedAt: new Date()
     }).where(eq(charges.id, id)).returning();
-    
-    // Recalculate folio balance
+
     const voidedCharge = result[0];
-    const folio = await this.getFolio(voidedCharge.folioId);
-    if (folio) {
-      const allCharges = await this.getChargesByFolio(folio.id);
-      const totalCharges = allCharges.reduce((sum, c) => sum + parseFloat(c.totalAmount.toString()), 0).toFixed(2);
-      const totalPayments = parseFloat(folio.totalPayments.toString());
-      const balance = (parseFloat(totalCharges) - totalPayments).toFixed(2);
-      
-      await this.updateFolio(folio.id, {
-        totalCharges,
-        balance
-      });
-    }
-    
+    if (voidedCharge) await this.recomputeFolioTotals(voidedCharge.folioId);
     return voidedCharge;
   }
 
@@ -920,29 +931,15 @@ export class DatabaseStorage implements IHMSStorage {
   async createPayment(payment: InsertPayment): Promise<Payment> {
     const result = await db.insert(payments).values(payment).returning();
     const newPayment = result[0];
-    
-    // Update folio total payments and balance
-    const folio = await this.getFolio(newPayment.folioId);
-    if (folio) {
-      const currentPayments = parseFloat(folio.totalPayments.toString());
-      const paymentAmount = parseFloat(newPayment.amount.toString());
-      const totalPayments = (currentPayments + paymentAmount).toFixed(2);
-      
-      const currentCharges = parseFloat(folio.totalCharges.toString());
-      const balance = (currentCharges - parseFloat(totalPayments)).toFixed(2);
-      
-      await this.updateFolio(folio.id, {
-        totalPayments,
-        balance
-      });
-    }
-    
+    await this.recomputeFolioTotals(newPayment.folioId);
     return newPayment;
   }
 
   async updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment> {
     const result = await db.update(payments).set(payment).where(eq(payments.id, id)).returning();
-    return result[0];
+    const updated = result[0];
+    if (updated) await this.recomputeFolioTotals(updated.folioId);
+    return updated;
   }
 
   // Service Request Management

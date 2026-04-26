@@ -2358,8 +2358,29 @@ export function registerFolioRoutes(app: Express) {
         if (existingFolio.status === 'closed') {
           return res.status(422).json({ error: "Cannot update closed folio" });
         }
-        
-        const folio = await storage.updateFolio(id, updateData);
+
+        // Enforce zero-balance requirement when closing the folio
+        if (updateData.status === 'closed') {
+          const balance = parseFloat(existingFolio.balance.toString());
+          if (Math.abs(balance) > 0.005) {
+            return res.status(422).json({
+              error: "Cannot close folio with non-zero balance",
+              balance: balance.toFixed(2),
+            });
+          }
+        }
+
+        // Strip server-managed financial fields - they are recomputed from charges/payments
+        const sanitized: any = { ...updateData };
+        delete sanitized.totalCharges;
+        delete sanitized.totalPayments;
+        delete sanitized.balance;
+        delete sanitized.propertyId;
+        delete sanitized.guestId;
+        delete sanitized.reservationId;
+        delete sanitized.folioNumber;
+
+        const folio = await storage.updateFolio(id, sanitized);
         res.json({ folio });
       } catch (error) {
         console.error("Update folio error:", error);
@@ -2540,7 +2561,13 @@ export function registerPaymentRoutes(app: Express) {
         if (!payment) {
           return res.status(404).json({ error: "Payment not found" });
         }
-        
+
+        // Property ownership check via the parent folio
+        const folio = await storage.getFolio(payment.folioId);
+        if (!folio || folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+
         res.json({ payment });
       } catch (error) {
         console.error("Get payment error:", error);
@@ -2634,8 +2661,86 @@ export function registerPaymentRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
-        const updateData = req.body;
-        
+        const updateData: any = { ...req.body };
+
+        // Verify payment exists, then verify property ownership via the parent folio
+        const existingPayment = await storage.getPayment(id);
+        if (!existingPayment) {
+          return res.status(404).json({ error: "Payment not found" });
+        }
+        const folio = await storage.getFolio(existingPayment.folioId);
+        if (!folio || folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+
+        // Reject mutations against payments on closed folios
+        if (folio.status === 'closed') {
+          return res.status(422).json({ error: "Cannot update payment on closed folio" });
+        }
+
+        // Strip server-managed / immutable fields the client must not change
+        delete updateData.folioId;
+        delete updateData.amount;
+        delete updateData.paymentMethod;
+        delete updateData.processedBy;
+        delete updateData.transactionId;
+
+        // Coerce any incoming ISO date strings into Date objects so Drizzle's timestamp mapper accepts them
+        const dateFields = ['paymentDate', 'refundedAt'];
+        for (const field of dateFields) {
+          if (updateData[field] && typeof updateData[field] === 'string') {
+            const parsed = new Date(updateData[field]);
+            if (!isNaN(parsed.getTime())) {
+              updateData[field] = parsed;
+            } else {
+              delete updateData[field];
+            }
+          }
+        }
+
+        // Validate status transitions
+        const allowedTransitions: Record<string, string[]> = {
+          pending: ['completed', 'failed'],
+          completed: ['refunded'],
+          failed: [],
+          refunded: [],
+        };
+        if (updateData.status && updateData.status !== existingPayment.status) {
+          const allowed = allowedTransitions[existingPayment.status] || [];
+          if (!allowed.includes(updateData.status)) {
+            return res.status(422).json({
+              error: `Invalid payment status transition: ${existingPayment.status} -> ${updateData.status}`,
+            });
+          }
+        }
+
+        // Refund handling
+        if (updateData.status === 'refunded') {
+          const originalAmount = parseFloat(existingPayment.amount.toString());
+          let refundAmount = updateData.refundAmount !== undefined
+            ? parseFloat(updateData.refundAmount.toString())
+            : originalAmount;
+
+          if (isNaN(refundAmount) || refundAmount <= 0) {
+            return res.status(400).json({ error: "refundAmount must be a positive number" });
+          }
+          if (refundAmount > originalAmount + 0.005) {
+            return res.status(422).json({
+              error: `Refund amount (${refundAmount.toFixed(2)}) cannot exceed original payment amount (${originalAmount.toFixed(2)})`,
+            });
+          }
+
+          updateData.refundAmount = refundAmount.toFixed(2);
+          if (!updateData.refundedAt) {
+            updateData.refundedAt = new Date();
+          }
+        } else {
+          // Don't allow setting refund fields outside of a refund transition
+          delete updateData.refundAmount;
+          delete updateData.refundReason;
+          delete updateData.refundedAt;
+        }
+
         const payment = await storage.updatePayment(id, updateData);
         res.json({ payment });
       } catch (error) {
