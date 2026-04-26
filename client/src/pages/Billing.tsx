@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useCurrency } from "@/context/CurrencyContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -119,46 +120,7 @@ export default function Billing() {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
 
-  const [targetCurrency, setTargetCurrency] = useState(() => {
-    return localStorage.getItem("preferred_currency") || "LKR";
-  });
-
-  const exchangeRates: Record<string, number> = {
-    LKR: 1,
-    USD: 0.0033,
-    EUR: 0.0031,
-    GBP: 0.0026,
-  };
-
-  const convertAmount = (amount: number | string) => {
-    const raw = typeof amount === "string" ? parseFloat(amount) : amount;
-    if (isNaN(raw)) return 0;
-    return raw * (exchangeRates[targetCurrency] || 1);
-  };
-
-  const formatWithCurrency = (amount: number | string) => {
-    const raw = typeof amount === "string" ? parseFloat(amount) : amount;
-    if (isNaN(raw)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
-    const converted = convertAmount(raw);
-    if (targetCurrency === "LKR") {
-      return new Intl.NumberFormat("en-LK", {
-        style: "currency",
-        currency: "LKR",
-        currencyDisplay: "symbol",
-      })
-        .format(raw)
-        .replace("LKR", "Rs.");
-    }
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: targetCurrency,
-    }).format(converted);
-  };
-
-  const handleCurrencyChange = (value: string) => {
-    setTargetCurrency(value);
-    localStorage.setItem("preferred_currency", value);
-  };
+  const { targetCurrency, formatWithCurrency, convertAmount } = useCurrency();
 
   // Get billing summary
   const { data: billingSummary, isLoading: summaryLoading } = useQuery({
@@ -802,20 +764,6 @@ export default function Billing() {
             Billing & Folios
           </h1>
           <p className="text-muted-foreground">Manage guest billing, charges, and payments</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Display Currency:</span>
-          <Select value={targetCurrency} onValueChange={handleCurrencyChange}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="LKR">LKR (Rs.)</SelectItem>
-              <SelectItem value="USD">USD ($)</SelectItem>
-              <SelectItem value="EUR">EUR (€)</SelectItem>
-              <SelectItem value="GBP">GBP (£)</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 

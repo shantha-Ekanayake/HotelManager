@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,9 @@ import type { Reservation } from "@shared/schema";
 export default function FrontDesk() {
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const propertyId = user?.propertyId;
 
   const { data: overviewData, isLoading: overviewLoading } = useQuery<{
     overview: {
@@ -56,6 +61,18 @@ export default function FrontDesk() {
   const { data: currentGuestsData, isLoading: guestsLoading } = useQuery<{ guests: Reservation[] }>({
     queryKey: ["/api/front-desk/current-guests"]
   });
+
+  const { data: roomsData } = useQuery<{ rooms: any[] }>({
+    queryKey: [`/api/properties/${propertyId}/rooms`],
+    enabled: !!propertyId,
+  });
+
+  const { data: allGuestsData } = useQuery<{ guests: any[] }>({
+    queryKey: ["/api/guests"],
+  });
+
+  const roomMap = new Map((roomsData?.rooms || []).map((r: any) => [r.id, r.roomNumber]));
+  const guestMap = new Map((allGuestsData?.guests || []).map((g: any) => [g.id, `${g.firstName} ${g.lastName}`]));
 
   const handleCheckInComplete = () => {
     setSelectedReservationId(null);
@@ -204,17 +221,25 @@ export default function FrontDesk() {
                         <div key={reservation.id} className="flex items-center justify-between p-3 border rounded-lg hover-elevate">
                           <div>
                             <p className="font-medium" data-testid={`text-guest-${reservation.id}`}>
-                              {reservation.confirmationNumber}
+                              {guestMap.get(reservation.guestId) || reservation.confirmationNumber}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              Room {reservation.roomId || "N/A"} • {new Date(reservation.arrivalDate).toLocaleDateString()}
+                              Room {roomMap.get(reservation.roomId || '') || reservation.roomId || "N/A"} • {reservation.confirmationNumber}
                             </p>
                           </div>
                           <div className="flex items-center gap-1 flex-wrap justify-end">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setLocation('/guests')}
+                              data-testid={`button-details-${reservation.id}`}
+                            >
+                              Details
+                            </Button>
                             <RoomTransferDialog
                               reservationId={reservation.id}
                               currentRoomId={reservation.roomId || undefined}
-                              guestName={reservation.confirmationNumber}
+                              guestName={guestMap.get(reservation.guestId) || reservation.confirmationNumber}
                             />
                             <ExpressCheckoutButton
                               reservationId={reservation.id}
@@ -423,7 +448,7 @@ export default function FrontDesk() {
                           >
                             <div className="text-left">
                               <p className="font-medium">{reservation.confirmationNumber}</p>
-                              <p className="text-xs text-muted-foreground">Room {reservation.roomId || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Room {roomMap.get(reservation.roomId || '') || reservation.roomId || "N/A"}</p>
                             </div>
                             <div className="flex gap-1">
                               <ExpressCheckoutButton

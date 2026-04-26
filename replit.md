@@ -53,7 +53,26 @@ The application is organized into core hotel management modules:
 - **Billing**: Payment processing and invoice management
 - **Reports**: Analytics and business intelligence
 
-## Recent Changes (April 2026)
+## Recent Changes (April 2026 — Bug Fixes)
+
+### Global Currency Selector, Front Desk Details Button, Room Number Display (April 26, 2026)
+- **Global Currency Context (`client/src/context/CurrencyContext.tsx`)**: New React context providing `targetCurrency`, `setTargetCurrency`, `convertAmount`, `formatWithCurrency`, `EXCHANGE_RATES`. Persists selection in localStorage.
+- **App.tsx**: Wrapped app with `<CurrencyProvider>` so currency state is global.
+- **DashboardHeader.tsx**: Currency `<Select>` (LKR/USD/EUR/GBP) moved to the header — a single global control.
+- **All pages updated** to use `useCurrency()` hook instead of local per-page currency state:
+  - `Dashboard.tsx`, `Billing.tsx`, `FinancialReports.tsx`, `Rooms.tsx`: removed local `targetCurrency` state, `exchangeRates`, `convertAmount`, `formatWithCurrency`, `handleCurrencyChange` — replaced with `useCurrency()` hook. Removed per-page currency `<Select>` dropdowns.
+  - `ReservationCard.tsx` component: replaced hardcoded `"Rs."` formatter with `useCurrency()` hook.
+- **Front Desk Details button (`client/src/pages/FrontDesk.tsx`)**:
+  - Added `useLocation` and `useAuth` imports.
+  - Added rooms query (`/api/properties/${propertyId}/rooms`) and guests query (`/api/guests`).
+  - Built `roomMap` (UUID→roomNumber) and `guestMap` (UUID→full name).
+  - Current Guests section now shows guest name (from guestMap) and readable room number (from roomMap).
+  - Added **Details** button (`data-testid="button-details-{id}"`) that navigates to `/guests`.
+  - Checkout tab room display also uses roomMap.
+- **Reservations.tsx**: Added rooms query and `roomMap`; `roomNumber` prop now shows the real room number (e.g. "101") instead of the UUID. `onViewDetails` navigates to `/guests` instead of `console.log`.
+- **E2E verified**: Currency global sync (LKR→USD), room numbers show as "101"/"102"/"TBA" (not UUIDs), Details button navigates correctly.
+
+## Recent Changes (April 2026 — Billing)
 
 ### Billing Module Hardening (April 26, 2026)
 - **Frontend (`client/src/pages/Billing.tsx`)**: Full feature rewrite

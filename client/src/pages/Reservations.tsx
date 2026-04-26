@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import ReservationCard from "@/components/ReservationCard";
 import { NewReservationDialog } from "@/components/NewReservationDialog";
 import CheckInForm from "@/components/CheckInForm";
@@ -16,6 +17,7 @@ import type { Reservation } from "@shared/schema";
 
 export default function Reservations() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isNewReservationOpen, setIsNewReservationOpen] = useState(false);
@@ -31,9 +33,15 @@ export default function Reservations() {
     queryKey: ["/api/guests"],
   });
 
+  const { data: roomsData } = useQuery<{ rooms: any[] }>({
+    queryKey: [`/api/properties/${user?.propertyId}/rooms`],
+    enabled: !!user?.propertyId,
+  });
+
   const reservations = data?.reservations || [];
   const guests = guestsData?.guests || [];
   const guestMap = new Map(guests.map(g => [g.id, `${g.firstName} ${g.lastName}`]));
+  const roomMap = new Map((roomsData?.rooms || []).map((r: any) => [r.id, r.roomNumber]));
 
   const filteredReservations = reservations.filter(reservation => {
     const matchesSearch = 
@@ -109,7 +117,7 @@ export default function Reservations() {
                 key={reservation.id}
                 id={reservation.confirmationNumber}
                 guestName={guestMap.get(reservation.guestId) || `Guest #${reservation.guestId.substring(0, 8)}`}
-                roomNumber={reservation.roomId || "TBA"}
+                roomNumber={roomMap.get(reservation.roomId || '') || "TBA"}
                 roomType="Room"
                 checkIn={new Date(reservation.arrivalDate).toLocaleDateString()}
                 checkOut={new Date(reservation.departureDate).toLocaleDateString()}
@@ -118,7 +126,7 @@ export default function Reservations() {
                 guestEmail=""
                 onCheckIn={() => setCheckInReservationId(reservation.id)}
                 onCheckOut={() => setCheckOutReservationId(reservation.id)}
-                onViewDetails={() => console.log(`View details ${reservation.id}`)}
+                onViewDetails={() => setLocation('/guests')}
               />
             ))}
           </div>

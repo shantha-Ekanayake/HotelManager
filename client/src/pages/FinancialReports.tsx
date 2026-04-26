@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useCurrency } from '@/context/CurrencyContext';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,46 +24,7 @@ import {
 } from 'lucide-react';
 
 export default function FinancialReports() {
-  const [targetCurrency, setTargetCurrency] = useState(() => {
-    return localStorage.getItem("preferred_currency") || "LKR";
-  });
-
-  const exchangeRates: Record<string, number> = {
-    "LKR": 1,
-    "USD": 0.0033,
-    "EUR": 0.0031,
-    "GBP": 0.0026
-  };
-
-  const convertAmount = (amount: number | string) => {
-    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(rawAmount)) return 0;
-    return rawAmount * (exchangeRates[targetCurrency] || 1);
-  };
-
-  const formatWithCurrency = (amount: number | string) => {
-    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
-    
-    const converted = convertAmount(rawAmount);
-    if (targetCurrency === "LKR") {
-      return new Intl.NumberFormat('en-LK', {
-        style: 'currency',
-        currency: 'LKR',
-        currencyDisplay: 'symbol'
-      }).format(rawAmount).replace('LKR', 'Rs.');
-    }
-    
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: targetCurrency
-    }).format(converted);
-  };
-
-  const handleCurrencyChange = (value: string) => {
-    setTargetCurrency(value);
-    localStorage.setItem("preferred_currency", value);
-  };
+  const { targetCurrency, formatWithCurrency, convertAmount } = useCurrency();
 
   const [dateRange, setDateRange] = useState({
     fromDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days ago
@@ -140,14 +102,6 @@ export default function FinancialReports() {
     return [headers, ...rows].map(row => row.join(',')).join('\n');
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-LK', { 
-      style: 'currency', 
-      currency: 'LKR',
-      currencyDisplay: 'symbol'
-    }).format(amount).replace('LKR', 'Rs.');
-  };
-
   if (dashboardError) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -176,20 +130,6 @@ export default function FinancialReports() {
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Display Currency:</span>
-            <Select value={targetCurrency} onValueChange={handleCurrencyChange}>
-              <SelectTrigger className="w-[100px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="LKR">LKR (Rs.)</SelectItem>
-                <SelectItem value="USD">USD ($)</SelectItem>
-                <SelectItem value="EUR">EUR (€)</SelectItem>
-                <SelectItem value="GBP">GBP (£)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <Button 
             onClick={exportAccountingData} 
             variant="outline" 

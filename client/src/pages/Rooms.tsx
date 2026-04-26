@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useCurrency } from "@/context/CurrencyContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -197,46 +198,7 @@ export default function Rooms() {
     },
   });
 
-  const [targetCurrency, setTargetCurrency] = useState(() => {
-    return localStorage.getItem("preferred_currency") || "LKR";
-  });
-
-  const exchangeRates: Record<string, number> = {
-    "LKR": 1,
-    "USD": 0.0033,
-    "EUR": 0.0031,
-    "GBP": 0.0026
-  };
-
-  const convertAmount = (amount: number) => {
-    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(rawAmount)) return 0;
-    return rawAmount * (exchangeRates[targetCurrency] || 1);
-  };
-
-  const formatWithCurrency = (amount: number) => {
-    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : "$0.00";
-    
-    const converted = convertAmount(rawAmount);
-    if (targetCurrency === "LKR") {
-      return new Intl.NumberFormat('en-LK', {
-        style: 'currency',
-        currency: 'LKR',
-        currencyDisplay: 'symbol'
-      }).format(rawAmount).replace('LKR', 'Rs.');
-    }
-    
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: targetCurrency
-    }).format(converted);
-  };
-
-  const handleCurrencyChange = (value: string) => {
-    setTargetCurrency(value);
-    localStorage.setItem("preferred_currency", value);
-  };
+  const { formatWithCurrency } = useCurrency();
 
   const { data: userData } = useCurrentUser();
   const propertyId = userData?.user?.propertyId || "prop-demo";
@@ -495,20 +457,6 @@ export default function Rooms() {
           <p className="text-muted-foreground">
             Manage room status and availability
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Display Currency:</span>
-          <Select value={targetCurrency} onValueChange={handleCurrencyChange}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="LKR">LKR (Rs.)</SelectItem>
-              <SelectItem value="USD">USD ($)</SelectItem>
-              <SelectItem value="EUR">EUR (€)</SelectItem>
-              <SelectItem value="GBP">GBP (£)</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
         {isManagerOrAbove && (
           <Button data-testid="button-add-room" onClick={() => setIsAddRoomOpen(true)}>

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import StatsCards from "@/components/StatsCards";
 import ReservationCard, { type ReservationStatus } from "@/components/ReservationCard";
 import RoomStatusCard, { type RoomStatus } from "@/components/RoomStatusCard";
@@ -7,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { Users, Bed, DollarSign, Calendar, TrendingUp, Star, BarChart3, Clock } from "lucide-react";
 import { useLocation } from "wouter";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCurrency } from "@/context/CurrencyContext";
 
 // Dashboard Analytics Type
 interface DashboardAnalytics {
@@ -211,60 +210,18 @@ function formatDate(dateString: string): string {
   });
 }
 
-// Helper function to format currency with symbol
-function formatCurrency(value: number): string {
-  if (isNaN(value)) return "Rs. 0.00";
-  return new Intl.NumberFormat('en-LK', {
-    style: 'currency',
-    currency: 'LKR',
-    currencyDisplay: 'symbol'
-  }).format(value).replace('LKR', 'Rs.');
-}
-
 // Helper function to format percentage
 function formatPercentage(value: number): string {
   if (isNaN(value)) return "0%";
   return `${Math.round(value * 100)}%`;
 }
 
-// Currency Conversion State and Logic
-const exchangeRates: Record<string, number> = {
-  "LKR": 1,
-  "USD": 0.0033,
-  "EUR": 0.0031,
-  "GBP": 0.0026
-};
-
 export default function Dashboard() {
   const { data: analytics, isLoading: analyticsLoading, error: analyticsError } = useDashboardAnalytics();
   const { data: recentReservations, isLoading: reservationsLoading } = useRecentReservations();
   const { data: roomsData, isLoading: roomsLoading } = useRoomStatus();
   const [, setLocation] = useLocation();
-  const [targetCurrency, setTargetCurrency] = useState(() => {
-    return localStorage.getItem("preferred_currency") || "LKR";
-  });
-
-  const handleCurrencyChange = (value: string) => {
-    setTargetCurrency(value);
-    localStorage.setItem("preferred_currency", value);
-  };
-
-  const convertAmount = (amount: number) => {
-    if (isNaN(amount)) return 0;
-    return amount * (exchangeRates[targetCurrency] || 1);
-  };
-
-  const formatWithCurrency = (amount: number) => {
-    const rawAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(rawAmount)) return targetCurrency === "LKR" ? "Rs. 0.00" : (targetCurrency === "USD" ? "$0.00" : (targetCurrency === "EUR" ? "€0.00" : "£0.00"));
-    const converted = convertAmount(rawAmount);
-    if (targetCurrency === "LKR") return formatCurrency(rawAmount);
-    
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: targetCurrency
-    }).format(converted);
-  };
+  const { formatWithCurrency } = useCurrency();
 
   // Generate stats from analytics data
   const stats = analytics ? [
@@ -325,27 +282,11 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6" data-testid="page-dashboard">
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Real-time hotel management analytics and insights
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Display Currency:</span>
-          <Select value={targetCurrency} onValueChange={handleCurrencyChange}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="LKR">LKR (Rs.)</SelectItem>
-              <SelectItem value="USD">USD ($)</SelectItem>
-              <SelectItem value="EUR">EUR (€)</SelectItem>
-              <SelectItem value="GBP">GBP (£)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+        <p className="text-muted-foreground">
+          Real-time hotel management analytics and insights
+        </p>
       </div>
       {analyticsError && (
         <div className="mt-2 text-sm text-destructive">
@@ -457,19 +398,19 @@ export default function Dashboard() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-primary">
-                  {formatCurrency(calculateTotal(analytics.monthlyTrend, 'totalRevenue'))}
+                  {formatWithCurrency(calculateTotal(analytics.monthlyTrend, 'totalRevenue'))}
                 </div>
                 <div className="text-sm text-muted-foreground">Total Revenue</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-primary">
-                  {formatCurrency(calculateAverage(analytics.monthlyTrend, 'adr'))}
+                  {formatWithCurrency(calculateAverage(analytics.monthlyTrend, 'adr'))}
                 </div>
                 <div className="text-sm text-muted-foreground">Avg ADR</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-primary">
-                  {formatCurrency(calculateAverage(analytics.monthlyTrend, 'revpar'))}
+                  {formatWithCurrency(calculateAverage(analytics.monthlyTrend, 'revpar'))}
                 </div>
                 <div className="text-sm text-muted-foreground">Avg RevPAR</div>
               </div>
