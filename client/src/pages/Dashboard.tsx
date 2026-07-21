@@ -3,10 +3,16 @@ import ReservationCard, { type ReservationStatus } from "@/components/Reservatio
 import RoomStatusCard, { type RoomStatus } from "@/components/RoomStatusCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { Users, Bed, DollarSign, Calendar, TrendingUp, Star, BarChart3, Clock } from "lucide-react";
+import { Users, Bed, DollarSign, Calendar, TrendingUp, Star, BarChart3, Clock, Wrench, TrendingDown, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/context/CurrencyContext";
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend, ReferenceLine
+} from "recharts";
 
 // Dashboard Analytics Type
 interface DashboardAnalytics {
@@ -221,7 +227,68 @@ export default function Dashboard() {
   const { data: recentReservations, isLoading: reservationsLoading } = useRecentReservations();
   const { data: roomsData, isLoading: roomsLoading } = useRoomStatus();
   const [, setLocation] = useLocation();
-  const { formatWithCurrency } = useCurrency();
+  const { formatWithCurrency, convertAmount } = useCurrency();
+  const { user } = useAuth();
+  const propertyId = user?.propertyId;
+
+  const { data: housekeepingData } = useQuery<{ tasks: any[] }>({
+    queryKey: [`/api/properties/${propertyId}/housekeeping-tasks`],
+    enabled: !!propertyId,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const { data: allReservationsData } = useQuery<{ reservations: any[] }>({
+    queryKey: ['/api/properties', propertyId, 'reservations'],
+    enabled: !!propertyId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Housekeeping summary
+  const hkTasks = housekeepingData?.tasks || [];
+  const hkSummary = {
+    pending: hkTasks.filter(t => t.status === 'pending').length,
+    inProgress: hkTasks.filter(t => t.status === 'in_progress').length,
+    completed: hkTasks.filter(t => t.status === 'completed' || t.status === 'inspected').length,
+    total: hkTasks.length,
+  };
+
+  // Revenue forecast: group future reservations by week (next 4 weeks)
+  const forecastData = (() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weeks = [
+      { label: 'This Week', start: 0, end: 6 },
+      { label: 'Week 2', start: 7, end: 13 },
+      { label: 'Week 3', start: 14, end: 20 },
+      { label: 'Week 4', start: 21, end: 27 },
+    ];
+    return weeks.map(w => {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() + w.start);
+      const weekEnd = new Date(today);
+      weekEnd.setDate(today.getDate() + w.end);
+      const revenue = (allReservationsData?.reservations || [])
+        .filter(r => {
+          if (!['confirmed', 'pending', 'checked_in'].includes(r.status)) return false;
+          const arrival = new Date(r.arrivalDate);
+          arrival.setHours(0, 0, 0, 0);
+          return arrival >= weekStart && arrival <= weekEnd;
+        })
+        .reduce((sum: number, r: any) => {
+          const amt = typeof r.totalAmount === 'string' ? parseFloat(r.totalAmount) : (r.totalAmount || 0);
+          return sum + convertAmount(amt);
+        }, 0);
+      return { label: w.label, revenue: Math.round(revenue) };
+    });
+  })();
+
+  // Monthly trend chart data (convert occupancyRate from 0-1 to 0-100)
+  const trendChartData = (analytics?.monthlyTrend || []).map(d => ({
+    date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    occupancy: Math.round((d.occupancyRate || 0) * 100),
+    revenue: Math.round(convertAmount(typeof d.totalRevenue === 'string' ? parseFloat(d.totalRevenue) : (d.totalRevenue || 0))),
+    adr: Math.round(convertAmount(typeof d.adr === 'string' ? parseFloat(d.adr) : (d.adr || 0))),
+  }));
 
   // Generate stats from analytics data
   const stats = analytics ? [
@@ -381,43 +448,238 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Additional Analytics Section */}
+      {/* Interactive Charts Section */}
       {analytics && analytics.monthlyTrend && analytics.monthlyTrend.length > 0 && (
-        <Card>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-testid="section-performance-charts">
+          {/* Occupancy Trend Line Chart */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-1 pb-2">
+              <div>
+                <CardTitle className="text-lg">Occupancy Trend</CardTitle>
+                <p className="text-sm text-muted-foreground">30-day occupancy rate (%)</p>
+              </div>
+              <TrendingUp className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="mb-3 grid grid-cols-2 gap-3">
+                <div className="text-center">
+                  <div className="text-xl font-bold text-primary">
+                    {formatPercentage(calculateAverage(analytics.monthlyTrend, 'occupancyRate'))}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Avg Occupancy</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-primary">
+                    {formatWithCurrency(calculateAverage(analytics.monthlyTrend, 'revpar'))}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Avg RevPAR</div>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={trendChartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v, i) => i % 7 === 0 ? v : ''}
+                    interval={0}
+                  />
+                  <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} unit="%" />
+                  <Tooltip
+                    formatter={(value: any) => [`${value}%`, 'Occupancy']}
+                    labelStyle={{ fontSize: 12 }}
+                    contentStyle={{ fontSize: 12, borderRadius: '8px' }}
+                  />
+                  <ReferenceLine y={80} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: '80%', fontSize: 10, position: 'insideTopRight' }} />
+                  <Line
+                    type="monotone"
+                    dataKey="occupancy"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    name="Occupancy %"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Revenue Bar Chart */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-1 pb-2">
+              <div>
+                <CardTitle className="text-lg">Revenue Graph</CardTitle>
+                <p className="text-sm text-muted-foreground">30-day daily revenue</p>
+              </div>
+              <BarChart3 className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="mb-3 grid grid-cols-2 gap-3">
+                <div className="text-center">
+                  <div className="text-xl font-bold text-primary">
+                    {formatWithCurrency(calculateTotal(analytics.monthlyTrend, 'totalRevenue'))}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Total Revenue</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-primary">
+                    {formatWithCurrency(calculateAverage(analytics.monthlyTrend, 'adr'))}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Avg ADR</div>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={trendChartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v, i) => i % 7 === 0 ? v : ''}
+                    interval={0}
+                  />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value: any) => [formatWithCurrency(value), 'Revenue']}
+                    labelStyle={{ fontSize: 12 }}
+                    contentStyle={{ fontSize: 12, borderRadius: '8px' }}
+                  />
+                  <Bar dataKey="revenue" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} name="Revenue" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Housekeeping Status Overview & Revenue Forecast */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Housekeeping Status Overview */}
+        <Card data-testid="card-housekeeping-overview">
           <CardHeader className="flex flex-row items-center justify-between gap-1">
-            <CardTitle className="text-lg">Monthly Performance Trend</CardTitle>
-            <Clock className="h-5 w-5 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-bold text-primary">
-                  {formatPercentage(calculateAverage(analytics.monthlyTrend, 'occupancyRate'))}
-                </div>
-                <div className="text-sm text-muted-foreground">Avg Occupancy</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-primary">
-                  {formatWithCurrency(calculateTotal(analytics.monthlyTrend, 'totalRevenue'))}
-                </div>
-                <div className="text-sm text-muted-foreground">Total Revenue</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-primary">
-                  {formatWithCurrency(calculateAverage(analytics.monthlyTrend, 'adr'))}
-                </div>
-                <div className="text-sm text-muted-foreground">Avg ADR</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-primary">
-                  {formatWithCurrency(calculateAverage(analytics.monthlyTrend, 'revpar'))}
-                </div>
-                <div className="text-sm text-muted-foreground">Avg RevPAR</div>
-              </div>
+            <div>
+              <CardTitle className="text-lg">Housekeeping Status</CardTitle>
+              <p className="text-sm text-muted-foreground">Current task overview</p>
             </div>
+            <Wrench className="h-5 w-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {hkTasks.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <Wrench className="mx-auto h-10 w-10 mb-3 opacity-40" />
+                <p className="text-sm">No housekeeping tasks today</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="rounded-md border p-3">
+                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{hkSummary.pending}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Pending</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{hkSummary.inProgress}</div>
+                    <div className="text-xs text-muted-foreground mt-1">In Progress</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">{hkSummary.completed}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Completed</div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {(['pending', 'in_progress', 'completed', 'inspected', 'cancelled'] as const).map(status => {
+                    const count = hkTasks.filter(t => t.status === status).length;
+                    if (count === 0) return null;
+                    const pct = hkSummary.total > 0 ? Math.round((count / hkSummary.total) * 100) : 0;
+                    const labelMap: Record<string, string> = {
+                      pending: 'Pending', in_progress: 'In Progress',
+                      completed: 'Completed', inspected: 'Inspected', cancelled: 'Cancelled'
+                    };
+                    const colorMap: Record<string, string> = {
+                      pending: 'bg-amber-500', in_progress: 'bg-blue-500',
+                      completed: 'bg-green-500', inspected: 'bg-emerald-500', cancelled: 'bg-muted-foreground'
+                    };
+                    return (
+                      <div key={status} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">{labelMap[status]}</span>
+                          <span className="font-medium">{count} ({pct}%)</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className={`h-full rounded-full ${colorMap[status]}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="pt-1">
+                  <button
+                    onClick={() => setLocation('/housekeeping')}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    View all housekeeping tasks →
+                  </button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
-      )}
+
+        {/* Revenue Forecast */}
+        <Card data-testid="card-revenue-forecast">
+          <CardHeader className="flex flex-row items-center justify-between gap-1">
+            <div>
+              <CardTitle className="text-lg">Revenue Forecast</CardTitle>
+              <p className="text-sm text-muted-foreground">Next 4 weeks (confirmed bookings)</p>
+            </div>
+            <TrendingDown className="h-5 w-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {forecastData.every(w => w.revenue === 0) ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <Calendar className="mx-auto h-10 w-10 mb-3 opacity-40" />
+                <p className="text-sm">No upcoming bookings in the next 28 days</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-md border p-3">
+                    <div className="text-lg font-bold text-primary">
+                      {formatWithCurrency(forecastData.reduce((s, w) => s + w.revenue, 0))}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Total 4-Week Forecast</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-lg font-bold text-primary">
+                      {formatWithCurrency(Math.round(forecastData.reduce((s, w) => s + w.revenue, 0) / 4))}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Avg Per Week</div>
+                  </div>
+                </div>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={forecastData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      formatter={(value: any) => [formatWithCurrency(value), 'Projected Revenue']}
+                      labelStyle={{ fontSize: 12 }}
+                      contentStyle={{ fontSize: 12, borderRadius: '8px' }}
+                    />
+                    <Bar dataKey="revenue" fill="hsl(var(--primary) / 0.8)" radius={[4, 4, 0, 0]} name="Forecast" />
+                  </BarChart>
+                </ResponsiveContainer>
+                <div className="flex flex-wrap gap-2">
+                  {forecastData.map(w => (
+                    <Badge key={w.label} variant="outline" className="text-xs">
+                      {w.label}: {formatWithCurrency(w.revenue)}
+                    </Badge>
+                  ))}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

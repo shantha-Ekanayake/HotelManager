@@ -36,7 +36,7 @@
 ## 🏨 CORE HMS MODULES
 
 ### 1. Dashboard Module
-**Status**: ⚠️ **PARTIAL** - 50% Complete
+**Status**: ⚠️ **PARTIAL** - 80% Complete
 
 - [x] Basic dashboard layout and navigation
 - [x] KPI cards display (occupancy, revenue, ADR, RevPAR)
@@ -46,14 +46,14 @@
 - [x] Recent reservations widget (shows latest 5 reservations with status)
 - [x] Room status overview widget (shows room cards with status)
 - [x] Currency conversion (LKR, USD, EUR, GBP) with localStorage persistence
+- [x] Interactive charts (occupancy trends line chart, revenue bar chart — recharts, 30-day window)
+- [x] Housekeeping status overview (pending/in-progress/completed counts + progress bars, links to /housekeeping)
+- [x] Revenue forecast widget (4-week bar chart from upcoming confirmed/pending reservations)
 - [ ] Real-time metrics updates (WebSocket)
-- [ ] Interactive charts (occupancy trends, revenue graphs)
-- [ ] Housekeeping status overview
-- [ ] Revenue forecast widget
 
 **Priority**: High  
 **Dependencies**: WebSocket implementation for real-time updates  
-**Code Review Verified**: April 8, 2026
+**Code Review Verified**: July 21, 2026
 
 ---
 
