@@ -14,6 +14,7 @@ import { CheckCircle2, CreditCard, Loader2, Mail, Receipt, Clock, Star } from "l
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Reservation, Guest, Folio, Charge, Payment } from "@shared/schema";
+import { printReceipt } from "./ReceiptPrint";
 
 interface CheckOutFormProps {
   reservationId?: string;
@@ -75,6 +76,37 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       });
     }
   });
+
+  const handlePrintReceipt = () => {
+    printReceipt({
+      guestName: guest ? `${guest.firstName} ${guest.lastName}` : "Guest",
+      guestEmail: guest?.email,
+      confirmationNumber: reservation?.confirmationNumber || "—",
+      roomNumber: reservation?.roomId || "—",
+      checkInDate: reservation?.arrivalDate
+        ? new Date(reservation.arrivalDate).toLocaleDateString()
+        : "—",
+      checkOutDate: reservation?.departureDate
+        ? new Date(reservation.departureDate).toLocaleDateString()
+        : "—",
+      nights: reservation?.nights ?? null,
+      charges: folio?.charges?.map((c) => ({
+        id: c.id,
+        description: c.description,
+        amount: c.amount,
+      })) || [],
+      payments: folio?.payments?.map((p) => ({
+        id: p.id,
+        paymentMethod: p.paymentMethod,
+        paymentDate: p.paymentDate,
+        amount: p.amount,
+      })) || [],
+      totalCharges,
+      totalPayments,
+      balance,
+      propertyName: "Hotel Management System",
+    });
+  };
 
   const handleResendEmail = async () => {
     if (!reservationId) return;
@@ -167,7 +199,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
             <Button
               type="button"
               variant="outline"
-              onClick={() => window.print()}
+              onClick={handlePrintReceipt}
               data-testid="button-print-receipt-success"
             >
               <Receipt className="h-4 w-4 mr-2" />
@@ -431,7 +463,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           <Button 
             type="button" 
             variant="outline"
-            onClick={() => window.print()}
+            onClick={handlePrintReceipt}
             data-testid="button-print-receipt"
           >
             Print Receipt
