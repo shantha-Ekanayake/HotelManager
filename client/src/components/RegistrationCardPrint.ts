@@ -32,7 +32,11 @@ interface RegistrationCardData {
   printedAt?: string;
 }
 
-export function printRegistrationCard(data: RegistrationCardData): void {
+/**
+ * Build the full HTML string for a registration card.
+ * Exported so it can be unit-tested in a Node environment without a browser.
+ */
+export function buildRegistrationCardHtml(data: RegistrationCardData): string {
   const {
     guestName,
     guestEmail,
@@ -205,6 +209,12 @@ export function printRegistrationCard(data: RegistrationCardData): void {
   </div>
 </body>
 </html>`;
+
+  return html;
+}
+
+export function printRegistrationCard(data: RegistrationCardData): void {
+  const html = buildRegistrationCardHtml(data);
 
   const printWindow = window.open("", "_blank", "width=800,height=900");
   if (!printWindow) {
