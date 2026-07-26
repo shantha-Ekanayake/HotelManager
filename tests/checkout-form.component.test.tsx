@@ -13,7 +13,7 @@
 
 // @vitest-environment jsdom
 
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -22,29 +22,53 @@ import "@testing-library/jest-dom";
 const mockMutate = vi.fn();
 let mutationOnSuccess: ((data: any) => void) | undefined;
 
+// Default folio/reservation data reused across most tests
+const DEFAULT_FOLIO_QUERY_DATA = {
+  reservation: {
+    id: "res-1",
+    confirmationNumber: "CONF-001",
+    guestId: "guest-1",
+    roomId: "101",
+    arrivalDate: new Date("2026-07-24"),
+    departureDate: new Date("2026-07-26"),
+    nights: 2,
+    totalAmount: "300.00",
+    status: "checked_in",
+    propertyId: "prop-demo",
+  },
+  folio: {
+    id: "folio-1",
+    charges: [{ id: "c1", description: "Room Charge", amount: "300.00" }],
+    payments: [{ id: "p1", paymentMethod: "credit_card", amount: "300.00", paymentDate: new Date() }],
+  },
+};
+
+// Tracks whether to return a guest with no email for the guest query
+let useGuestWithNoEmail = false;
+
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: vi.fn(() => ({
-    data: {
-      reservation: {
-        id: "res-1",
-        confirmationNumber: "CONF-001",
-        guestId: "guest-1",
-        roomId: "101",
-        arrivalDate: new Date("2026-07-24"),
-        departureDate: new Date("2026-07-26"),
-        nights: 2,
-        totalAmount: "300.00",
-        status: "checked_in",
-        propertyId: "prop-demo",
-      },
-      folio: {
-        id: "folio-1",
-        charges: [{ id: "c1", description: "Room Charge", amount: "300.00" }],
-        payments: [{ id: "p1", paymentMethod: "credit_card", amount: "300.00", paymentDate: new Date() }],
-      },
-    },
-    isLoading: false,
-  })),
+  useQuery: vi.fn((opts: any) => {
+    // The guest query has a key starting with "/api/guests"
+    const key = opts?.queryKey?.[0] ?? "";
+    if (typeof key === "string" && key.startsWith("/api/guests") && useGuestWithNoEmail) {
+      return {
+        data: {
+          guest: {
+            id: "guest-noemail",
+            firstName: "NoEmail",
+            lastName: "Guest",
+            email: null,
+          },
+        },
+        isLoading: false,
+      };
+    }
+    // Default: return folio data (guest field absent — component treats it as undefined)
+    return {
+      data: DEFAULT_FOLIO_QUERY_DATA,
+      isLoading: false,
+    };
+  }),
   useMutation: vi.fn((opts: any) => {
     // Capture onSuccess so tests can trigger it
     mutationOnSuccess = opts.onSuccess;
@@ -76,6 +100,11 @@ describe("CheckOutForm – success panel", () => {
   beforeEach(() => {
     mockMutate.mockReset();
     mutationOnSuccess = undefined;
+    useGuestWithNoEmail = false;
+  });
+
+  afterEach(() => {
+    useGuestWithNoEmail = false;
   });
 
   it("renders the pre-check-out form initially (no success panel)", () => {
@@ -131,5 +160,33 @@ describe("CheckOutForm – success panel", () => {
     const resendBtn = screen.getByTestId("button-resend-receipt-email");
     expect(resendBtn).not.toBeDisabled();
     expect(resendBtn).toHaveTextContent("Resend Receipt Email");
+  });
+
+  it("shows 'No email address on file' copy in the success panel when the guest has no email", async () => {
+    // Configure the query mock to return a guest with email: null
+    useGuestWithNoEmail = true;
+
+    render(<CheckOutForm reservationId="res-1" />);
+
+    // Trigger check-out success with no emailStatus (service silently skipped)
+    mutationOnSuccess?.({ reservation: { status: "checked_out" } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("button-resend-receipt-email")
+      ).toBeInTheDocument();
+    });
+
+    // The "no email on file" message must be visible so staff notice
+    expect(
+      screen.getByText(
+        /No email address on file — add one to the guest profile/i
+      )
+    ).toBeInTheDocument();
+
+    // The standard "receipt was emailed" message must NOT appear
+    expect(
+      screen.queryByText(/A departure receipt was emailed/i)
+    ).not.toBeInTheDocument();
   });
 });

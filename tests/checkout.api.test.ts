@@ -265,6 +265,90 @@ describe("POST /api/reservations/:id/check-out", () => {
 
     expect(res.status).toBe(401);
   });
+
+  it("returns 200 when checking out a guest with no email address (silent skip)", async () => {
+    // A guest without any email address — the service should silently skip
+    // the email and still complete the check-out successfully.
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const noEmailGuest = await memStorage.createGuest({
+      firstName: "NoEmail",
+      lastName: "Guest",
+      email: null,
+      phone: null,
+      address: null, city: null, state: null, country: null, postalCode: null,
+      idType: null, idNumber: null, nationality: null,
+      vipStatus: false, notes: null, dateOfBirth: null, preferences: {},
+    });
+
+    const noEmailReservation = await memStorage.createReservation({
+      propertyId: "prop-demo",
+      guestId: noEmailGuest.id,
+      roomTypeId: "rt-standard",
+      ratePlanId: "rp-standard",
+      status: "checked_in",
+      arrivalDate: today,
+      departureDate: tomorrow,
+      nights: 1,
+      adults: 1,
+      children: 0,
+      totalAmount: "100.00",
+      depositAmount: null,
+      depositPaid: false,
+      specialRequests: null,
+      roomId: "room-301",
+      checkInTime: new Date(),
+      checkOutTime: null,
+      guestSignature: null,
+      notes: null,
+    });
+
+    const noEmailFolio = await memStorage.createFolio({
+      reservationId: noEmailReservation.id,
+      propertyId: "prop-demo",
+      guestId: noEmailGuest.id,
+      status: "open",
+      totalCharges: "100.00",
+      totalPayments: "100.00",
+      balance: "0.00",
+      notes: null,
+    });
+
+    await memStorage.createCharge({
+      folioId: noEmailFolio.id,
+      description: "Room Charge",
+      amount: "100.00",
+      chargeDate: today,
+      chargeType: "room",
+      quantity: 1,
+      unitPrice: "100.00",
+      taxAmount: null,
+      notes: null,
+    });
+
+    mockSendCheckOutEmail.mockClear();
+    // The mock resolves to "skipped" to reflect what the real service does when email is absent
+    mockSendCheckOutEmail.mockResolvedValueOnce("skipped");
+
+    const res = await request(app)
+      .post(`/api/reservations/${noEmailReservation.id}/check-out`)
+      .set("Authorization", authHeader)
+      .send({});
+
+    // Endpoint must still succeed — missing email is a silent skip, not an error
+    expect(res.status).toBe(200);
+    expect(res.body.reservation.status).toBe("checked_out");
+
+    // sendCheckOutEmail must have been called (the service decides to skip internally)
+    expect(mockSendCheckOutEmail).toHaveBeenCalledTimes(1);
+
+    // The guest argument passed to the email service has no email
+    const [guestArg] = mockSendCheckOutEmail.mock.calls[0];
+    expect(guestArg.email).toBeFalsy();
+    expect(guestArg.firstName).toBe("NoEmail");
+  });
 });
 
 describe("POST /api/reservations/:id/send-checkout-email", () => {
