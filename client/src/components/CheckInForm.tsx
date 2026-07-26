@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Calendar, Clock, User, CreditCard, KeyRound, Phone, Mail, Loader2, ShieldCheck, PenLine, CheckCircle2, Printer, Send } from "lucide-react";
+import { Calendar, Clock, User, CreditCard, KeyRound, Phone, Mail, Loader2, ShieldCheck, PenLine, CheckCircle2, Printer, Send, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Reservation, Guest, Room } from "@shared/schema";
@@ -224,6 +224,7 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
 
   // Post-check-in success panel
   if (checkInResult) {
+    const emailStatus: "sent" | "skipped" | "failed" | undefined = checkInResult.emailStatus;
     return (
       <div className="space-y-6">
         <Alert className="border-green-200 bg-green-50">
@@ -231,11 +232,25 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
           <AlertTitle className="text-green-800">Check-In Complete</AlertTitle>
           <AlertDescription className="text-green-700">
             {guest.firstName} {guest.lastName} has been successfully checked in.
-            {guest.email
-              ? " A welcome email was attempted — use Resend below if it was not received."
-              : " No email address on file — use Resend below to trigger delivery once an address is added."}
+            {emailStatus === "sent"
+              ? " A welcome email has been sent to the guest."
+              : emailStatus === "failed"
+              ? " The welcome email could not be sent — see the warning below."
+              : guest.email
+              ? " No email confirmation was sent (SMTP not configured)."
+              : " No email address on file."}
           </AlertDescription>
         </Alert>
+
+        {emailStatus === "failed" && (
+          <Alert className="border-yellow-300 bg-yellow-50" data-testid="alert-email-failed">
+            <AlertTriangle className="h-5 w-5 text-yellow-600" />
+            <AlertTitle className="text-yellow-800">Welcome Email Failed</AlertTitle>
+            <AlertDescription className="text-yellow-700">
+              The check-in confirmation email could not be delivered. The failure has been recorded in the guest communication log. Use the <strong>Resend Welcome Email</strong> button below once the issue is resolved, or contact the guest directly.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Card>
           <CardHeader>

@@ -248,19 +248,19 @@ export async function sendCheckInEmail(
   roomNumber: string,
   propertyName: string,
   propertyContact?: string
-): Promise<void> {
+): Promise<"sent" | "skipped"> {
   const smtpHost = process.env.SMTP_HOST;
 
   if (!smtpHost) {
     // SMTP not configured — log and no-op
     console.log("[EMAIL] SMTP not configured. Would have sent check-in email to:", guest.email);
     console.log("[EMAIL] Confirmation:", reservation.confirmationNumber, "| Room:", roomNumber, "| Property:", propertyName);
-    return;
+    return "skipped";
   }
 
   if (!guest.email) {
     console.log("[EMAIL] Guest has no email address. Skipping check-in email for confirmation:", reservation.confirmationNumber);
-    return;
+    return "skipped";
   }
 
   const transporter = nodemailer.createTransport({
@@ -286,4 +286,5 @@ export async function sendCheckInEmail(
   });
 
   console.log("[EMAIL] Check-in confirmation email sent to:", guest.email, "| Confirmation:", reservation.confirmationNumber);
+  return "sent";
 }

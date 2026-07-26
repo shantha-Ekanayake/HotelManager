@@ -1270,24 +1270,38 @@ export function registerReservationRoutes(app: Express) {
         }
 
         // Send welcome / check-in confirmation email (non-blocking)
+        let emailStatus: "sent" | "skipped" | "failed" = "skipped";
         try {
           const guest = await storage.getGuest(reservation.guestId);
           const room = roomId ? await storage.getRoom(roomId) : null;
           const property = await storage.getProperty(reservation.propertyId);
           if (guest) {
-            await sendCheckInEmail(
+            emailStatus = await sendCheckInEmail(
               guest,
               reservation,
               room?.roomNumber || roomId || "—",
               property?.name || "Our Hotel"
             );
           }
-        } catch (emailErr) {
+        } catch (emailErr: any) {
           console.error("Failed to send check-in email:", emailErr);
-          // Non-fatal — continue
+          emailStatus = "failed";
+          // Record the failure in guest_communications so staff have an audit trail
+          try {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Check-in confirmation – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Email delivery failed during check-in. Error: ${emailErr?.message || String(emailErr)}`,
+              staffId: req.user?.id || null
+            });
+          } catch (logErr) {
+            console.error("Failed to log email failure to guest_communications:", logErr);
+          }
         }
         
-        res.json({ reservation: updatedReservation });
+        res.json({ reservation: updatedReservation, emailStatus });
       } catch (error) {
         console.error("Check-in error:", error);
         res.status(500).json({ error: "Internal server error" });
