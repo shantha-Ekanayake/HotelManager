@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "./storage";
+import { sendCheckInEmail } from "./email-service";
 import { 
   authenticate, 
   authorize, 
@@ -1213,7 +1214,7 @@ export function registerReservationRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
-        const { roomId, depositAmount, paymentMethod } = req.body;
+        const { roomId, depositAmount, paymentMethod, idType, idNumber, nationality, signature } = req.body;
         
         const reservation = await storage.getReservation(id);
         if (!reservation) {
@@ -1225,9 +1226,19 @@ export function registerReservationRoutes(app: Express) {
           roomId,
           checkInTime: new Date(),
           depositAmount: depositAmount ? depositAmount.toString() : reservation.depositAmount,
-          depositPaid: !!depositAmount
+          depositPaid: !!depositAmount,
+          guestSignature: signature || null
         } as any);
         
+        // Update guest ID fields if provided
+        if (reservation.guestId && (idType || idNumber || nationality)) {
+          await storage.updateGuest(reservation.guestId, {
+            ...(idType ? { idType } : {}),
+            ...(idNumber ? { idNumber } : {}),
+            ...(nationality ? { nationality } : {})
+          } as any);
+        }
+
         // Update room status to occupied
         if (roomId) {
           await storage.updateRoom(roomId, { status: "occupied" });
@@ -1257,11 +1268,60 @@ export function registerReservationRoutes(app: Express) {
             postedBy: req.user?.id
           });
         }
+
+        // Send welcome / check-in confirmation email (non-blocking)
+        try {
+          const guest = await storage.getGuest(reservation.guestId);
+          const room = roomId ? await storage.getRoom(roomId) : null;
+          const property = await storage.getProperty(reservation.propertyId);
+          if (guest) {
+            await sendCheckInEmail(
+              guest,
+              reservation,
+              room?.roomNumber || roomId || "—",
+              property?.name || "Our Hotel"
+            );
+          }
+        } catch (emailErr) {
+          console.error("Failed to send check-in email:", emailErr);
+          // Non-fatal — continue
+        }
         
         res.json({ reservation: updatedReservation });
       } catch (error) {
         console.error("Check-in error:", error);
         res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Resend check-in confirmation email
+  app.post("/api/reservations/:id/send-checkin-email",
+    authenticate,
+    authorize("check_in.process"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+        const guest = await storage.getGuest(reservation.guestId);
+        const room = reservation.roomId ? await storage.getRoom(reservation.roomId) : null;
+        const property = await storage.getProperty(reservation.propertyId);
+        if (!guest) {
+          return res.status(404).json({ error: "Guest not found" });
+        }
+        await sendCheckInEmail(
+          guest,
+          reservation,
+          room?.roomNumber || reservation.roomId || "—",
+          property?.name || "Our Hotel"
+        );
+        res.json({ success: true, message: "Check-in email sent" });
+      } catch (error) {
+        console.error("Resend email error:", error);
+        res.status(500).json({ error: "Failed to send email" });
       }
     }
   );

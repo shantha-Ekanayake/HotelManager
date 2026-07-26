@@ -270,6 +270,7 @@ export const reservations = pgTable("reservations", {
   source: text("source").notNull().default("direct"),
   specialRequests: text("special_requests"),
   notes: text("notes"),
+  guestSignature: text("guest_signature"),
   checkInTime: timestamp("check_in_time"),
   checkOutTime: timestamp("check_out_time"),
   createdBy: varchar("created_by").references(() => users.id),
