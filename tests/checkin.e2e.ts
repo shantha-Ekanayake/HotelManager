@@ -1,17 +1,19 @@
 /**
  * Playwright end-to-end test: full check-in flow.
  *
+ * The test is fully self-contained: beforeAll creates its own room type,
+ * rate plan, room, guest, and reservation; afterAll tears them all down.
+ * It no longer depends on whatever data happens to exist in the live DB.
+ *
  * The test:
  *  1. Logs in as front-desk staff via the Login page.
- *  2. Creates a test guest + reservation for today via the API (so we always
- *     have a predictable arrival to work with regardless of DB state).
- *  3. Opens Front Desk → Check-in tab.
- *  4. Selects that arrival.
- *  5. Fills the ID verification fields.
- *  6. Draws a signature on the canvas.
- *  7. Selects an available room.
- *  8. Submits the form.
- *  9. Asserts the success panel appears and both "Print Registration Card" and
+ *  2. Opens Front Desk → Check-in tab.
+ *  3. Selects the reservation created in beforeAll.
+ *  4. Fills the ID verification fields.
+ *  5. Draws a signature on the canvas.
+ *  6. Selects the available room created in beforeAll.
+ *  7. Submits the form.
+ *  8. Asserts the success panel appears and both "Print Registration Card" and
  *     "Resend Welcome Email" buttons are visible.
  */
 
@@ -49,191 +51,282 @@ async function loginViaApi(
   }
 }
 
-async function createTestReservation(
-  baseURL: string,
-  token: string,
-  propertyId: string
-): Promise<string | null> {
-  const ctx = await apiRequest.newContext({
-    baseURL,
-    extraHTTPHeaders: { Authorization: `Bearer ${token}` },
-  });
-  try {
-    // Create guest
-    const guestRes = await ctx.post("/api/guests", {
-      data: {
-        firstName: "E2E",
-        lastName: "CheckinTest",
-        email: null,
-        phone: null,
-        address: null,
-        city: null,
-        state: null,
-        country: null,
-        postalCode: null,
-        idType: null,
-        idNumber: null,
-        nationality: null,
-        vipStatus: false,
-        notes: null,
-        dateOfBirth: null,
-        preferences: {},
-      },
-    });
-    if (!guestRes.ok()) return null;
-    const { guest } = await guestRes.json();
+// ── test suite ────────────────────────────────────────────────────────────────
 
-    // Discover the first room type available for this property
-    const rtRes = await ctx.get(`/api/properties/${propertyId}/room-types`);
-    const rtBody = rtRes.ok() ? await rtRes.json() : {};
-    const roomTypeId: string = rtBody.roomTypes?.[0]?.id ?? "rt-standard";
-
-    // Discover the first rate plan available for this property
-    const rpRes = await ctx.get(`/api/properties/${propertyId}/rate-plans`);
-    const rpBody = rpRes.ok() ? await rpRes.json() : {};
-    const ratePlanId: string = rpBody.ratePlans?.[0]?.id ?? "rp-standard";
-
-    // Create reservation for today
-    const today = new Date().toISOString().split("T")[0];
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().split("T")[0];
-
-    const resRes = await ctx.post("/api/reservations", {
-      data: {
-        propertyId,
-        guestId: guest.id,
-        roomTypeId,
-        ratePlanId,
-        status: "confirmed",
-        arrivalDate: today,
-        departureDate: tomorrow,
-        nights: 1,
-        adults: 1,
-        children: 0,
-        totalAmount: "100",
-      },
-    });
-    if (!resRes.ok()) return null;
-    const { reservation } = await resRes.json();
-    return reservation?.id ?? null;
-  } catch {
-    return null;
-  } finally {
-    await ctx.dispose();
-  }
-}
-
-// ── test ─────────────────────────────────────────────────────────────────────
-
-test("check-in form end-to-end: fills ID, draws signature, submits, sees success panel", async ({
-  page,
-  baseURL,
-}) => {
-  const base = baseURL ?? "http://localhost:5000";
-
-  // ── 1. Resolve credentials ────────────────────────────────────────────────
+test.describe("check-in flow (self-contained fixtures)", () => {
+  // Shared auth state resolved in beforeAll
   let auth: { token: string; propertyId: string } | null = null;
   let usedCreds = CREDENTIALS[0];
 
-  for (const creds of CREDENTIALS) {
-    auth = await loginViaApi(base, creds.username, creds.password);
-    if (auth) { usedCreds = creds; break; }
-  }
+  // IDs of entities created by beforeAll / torn down by afterAll
+  let testRoomTypeId: string | null = null;
+  let testRatePlanId: string | null = null;
+  let testRoomId: string | null = null;
+  let testGuestId: string | null = null;
+  let testReservationId: string | null = null;
 
-  if (!auth) {
-    test.skip(true, "No known user credentials exist in this DB — seed the DB first.");
-    return;
-  }
+  // ── setup ──────────────────────────────────────────────────────────────────
+  test.beforeAll(async () => {
+    const base = "http://localhost:5000";
+    const suffix = Date.now();
 
-  // ── 2. Create a reservation arriving today ────────────────────────────────
-  const reservationId = await createTestReservation(base, auth.token, auth.propertyId);
-
-  // ── 3. Log in via the UI ──────────────────────────────────────────────────
-  await page.goto("/");
-
-  // The app shows a login form even on protected pages (client-side guard).
-  // Wait for the username field to be ready.
-  const usernameInput = page.getByTestId("input-username");
-  await expect(usernameInput).toBeVisible({ timeout: 10_000 });
-
-  await usernameInput.fill(usedCreds.username);
-  await page.getByTestId("input-password").fill(usedCreds.password);
-  await page.getByTestId("button-login").click();
-
-  // After login the login form should disappear and the app renders the main UI.
-  // Wait for the login button (or form) to be gone — signals successful auth.
-  await expect(page.getByTestId("button-login")).toBeHidden({ timeout: 15_000 });
-
-  // ── 4. Navigate to Front Desk ─────────────────────────────────────────────
-  await page.goto("/front-desk");
-  await expect(page.getByTestId("page-front-desk")).toBeVisible({ timeout: 15_000 });
-
-  // ── 5. Open the Check-in tab ──────────────────────────────────────────────
-  await page.getByTestId("tab-checkin").click();
-
-  // ── 6. Select a reservation to check in ──────────────────────────────────
-  let selectedReservationId = reservationId;
-
-  if (reservationId) {
-    const selectBtn = page.getByTestId(`button-select-checkin-${reservationId}`);
-    const visible = await selectBtn.isVisible({ timeout: 5_000 }).catch(() => false);
-    if (visible) {
-      await selectBtn.click();
-    } else {
-      // Fall back to first arrival in the list
-      const first = page.locator('[data-testid^="button-select-checkin-"]').first();
-      await expect(first).toBeVisible({ timeout: 10_000 });
-      selectedReservationId = await first.getAttribute("data-testid").then(
-        (id) => id?.replace("button-select-checkin-", "") ?? null
-      );
-      await first.click();
+    // Resolve credentials
+    for (const creds of CREDENTIALS) {
+      auth = await loginViaApi(base, creds.username, creds.password);
+      if (auth) { usedCreds = creds; break; }
     }
-  } else {
-    // No reservation was created — pick whatever is in the arrivals list
-    const first = page.locator('[data-testid^="button-select-checkin-"]').first();
-    await expect(first).toBeVisible({ timeout: 10_000 });
-    await first.click();
-  }
+    if (!auth) return; // The test body will skip itself when auth is null
 
-  // Wait for the check-in form's guest info card to load
-  await expect(page.getByTestId("card-checkin-form")).toBeVisible({ timeout: 15_000 });
+    const ctx = await apiRequest.newContext({
+      baseURL: base,
+      extraHTTPHeaders: { Authorization: `Bearer ${auth.token}` },
+    });
+    try {
+      // 1. Create a dedicated room type
+      const rtRes = await ctx.post(
+        `/api/properties/${auth.propertyId}/room-types`,
+        {
+          data: {
+            name: `E2E-RoomType-${suffix}`,
+            description: "Playwright test fixture — safe to delete",
+            maxOccupancy: 2,
+            baseRate: "150.00",
+            amenities: [],
+            isActive: true,
+          },
+        }
+      );
+      if (rtRes.ok()) {
+        const body = await rtRes.json();
+        testRoomTypeId = body.roomType?.id ?? null;
+      }
 
-  // ── 7. Fill ID verification fields ───────────────────────────────────────
-  await page.getByTestId("input-id-number").fill("PW987654");
-  await page.getByTestId("input-nationality").fill("British");
+      // 2. Create a dedicated rate plan
+      const rpRes = await ctx.post(
+        `/api/properties/${auth.propertyId}/rate-plans`,
+        {
+          data: {
+            name: `E2E-RatePlan-${suffix}`,
+            description: "Playwright test fixture — safe to delete",
+            isActive: true,
+            isRefundable: true,
+          },
+        }
+      );
+      if (rpRes.ok()) {
+        const body = await rpRes.json();
+        testRatePlanId = body.ratePlan?.id ?? null;
+      }
 
-  // Open the Radix Select for ID type and pick "Passport"
-  await page.getByTestId("select-id-type").click();
-  await page.getByRole("option", { name: "Passport" }).click();
+      // 3. Create a dedicated room (requires room type)
+      if (testRoomTypeId) {
+        const roomRes = await ctx.post(
+          `/api/properties/${auth.propertyId}/rooms`,
+          {
+            data: {
+              roomTypeId: testRoomTypeId,
+              roomNumber: `E2E-${suffix}`,
+              floor: 9,
+              status: "available",
+              isActive: true,
+            },
+          }
+        );
+        if (roomRes.ok()) {
+          const body = await roomRes.json();
+          testRoomId = body.room?.id ?? null;
+        }
+      }
 
-  // ── 8. Draw a signature on the canvas ────────────────────────────────────
-  const canvas = page.getByTestId("signature-canvas");
-  await expect(canvas).toBeVisible({ timeout: 5_000 });
+      // 4. Create a dedicated guest
+      const guestRes = await ctx.post("/api/guests", {
+        data: {
+          firstName: "E2E",
+          lastName: "CheckinTest",
+          email: null,
+          phone: null,
+          address: null,
+          city: null,
+          state: null,
+          country: null,
+          postalCode: null,
+          idType: null,
+          idNumber: null,
+          nationality: null,
+          vipStatus: false,
+          notes: null,
+          dateOfBirth: null,
+          preferences: {},
+        },
+      });
+      if (guestRes.ok()) {
+        const body = await guestRes.json();
+        testGuestId = body.guest?.id ?? null;
+      }
 
-  const box = await canvas.boundingBox();
-  if (box) {
-    await page.mouse.move(box.x + 20, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2, { steps: 10 });
-    await page.mouse.up();
-  }
+      // 5. Create a reservation arriving today
+      if (testRoomTypeId && testRatePlanId && testGuestId) {
+        const today = new Date().toISOString().split("T")[0];
+        const tomorrow = new Date(Date.now() + 86_400_000)
+          .toISOString()
+          .split("T")[0];
 
-  // ── 9. Select an available room ───────────────────────────────────────────
-  const roomSelect = page.getByTestId("select-room-number");
-  await roomSelect.click();
-  const firstRoom = page.getByRole("option").first();
-  await expect(firstRoom).toBeVisible({ timeout: 5_000 });
-  await firstRoom.click();
+        const resRes = await ctx.post("/api/reservations", {
+          data: {
+            propertyId: auth.propertyId,
+            guestId: testGuestId,
+            roomTypeId: testRoomTypeId,
+            ratePlanId: testRatePlanId,
+            status: "confirmed",
+            arrivalDate: today,
+            departureDate: tomorrow,
+            nights: 1,
+            adults: 1,
+            children: 0,
+            totalAmount: "150",
+          },
+        });
+        if (resRes.ok()) {
+          const body = await resRes.json();
+          testReservationId = body.reservation?.id ?? null;
+        }
+      }
+    } finally {
+      await ctx.dispose();
+    }
+  });
 
-  // ── 10. Submit the form ───────────────────────────────────────────────────
-  await page.getByTestId("button-complete-checkin").click();
+  // ── teardown ───────────────────────────────────────────────────────────────
+  test.afterAll(async () => {
+    if (!auth) return;
 
-  // ── 11. Assert the success panel with Print + Resend buttons ──────────────
-  // The AlertTitle has class text-green-800 and contains "Check-In Complete"
-  await expect(
-    page.locator('[data-testid="button-print-registration-card"]')
-  ).toBeVisible({ timeout: 15_000 });
+    const base = "http://localhost:5000";
+    const ctx = await apiRequest.newContext({
+      baseURL: base,
+      extraHTTPHeaders: { Authorization: `Bearer ${auth.token}` },
+    });
+    try {
+      // Delete in reverse-dependency order
+      if (testReservationId) {
+        await ctx.delete(`/api/reservations/${testReservationId}`);
+      }
+      if (testRoomId) {
+        await ctx.delete(`/api/rooms/${testRoomId}`);
+      }
+      if (testRoomTypeId) {
+        await ctx.delete(`/api/room-types/${testRoomTypeId}`);
+      }
+      if (testRatePlanId) {
+        await ctx.delete(`/api/rate-plans/${testRatePlanId}`);
+      }
+      if (testGuestId) {
+        await ctx.delete(`/api/guests/${testGuestId}`);
+      }
+    } finally {
+      await ctx.dispose();
+    }
+  });
 
-  await expect(
-    page.locator('[data-testid="button-resend-email"]')
-  ).toBeVisible();
+  // ── test ───────────────────────────────────────────────────────────────────
+  test("check-in form end-to-end: fills ID, draws signature, submits, sees success panel", async ({
+    page,
+    baseURL,
+  }) => {
+    // Skip cleanly when setup could not authenticate
+    if (!auth) {
+      test.skip(
+        true,
+        "No known user credentials exist in this DB — seed the DB first."
+      );
+      return;
+    }
+
+    // Skip cleanly when the fixture reservation was not created
+    if (!testReservationId) {
+      test.skip(
+        true,
+        "Test fixture setup failed — reservation could not be created."
+      );
+      return;
+    }
+
+    // ── 1. Log in via the UI ──────────────────────────────────────────────
+    await page.goto("/");
+
+    const usernameInput = page.getByTestId("input-username");
+    await expect(usernameInput).toBeVisible({ timeout: 10_000 });
+
+    await usernameInput.fill(usedCreds.username);
+    await page.getByTestId("input-password").fill(usedCreds.password);
+    await page.getByTestId("button-login").click();
+
+    await expect(page.getByTestId("button-login")).toBeHidden({
+      timeout: 15_000,
+    });
+
+    // ── 2. Navigate to Front Desk ─────────────────────────────────────────
+    await page.goto("/front-desk");
+    await expect(page.getByTestId("page-front-desk")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // ── 3. Open the Check-in tab ──────────────────────────────────────────
+    await page.getByTestId("tab-checkin").click();
+
+    // ── 4. Select our fixture reservation ────────────────────────────────
+    // The fixture reservation must be visible — no fallback to ambient data.
+    const selectBtn = page.getByTestId(
+      `button-select-checkin-${testReservationId}`
+    );
+    await expect(selectBtn).toBeVisible({ timeout: 10_000 });
+    await selectBtn.click();
+
+    // Wait for the check-in form's guest info card to load
+    await expect(page.getByTestId("card-checkin-form")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // ── 5. Fill ID verification fields ───────────────────────────────────
+    await page.getByTestId("input-id-number").fill("PW987654");
+    await page.getByTestId("input-nationality").fill("British");
+
+    // Open the Radix Select for ID type and pick "Passport"
+    await page.getByTestId("select-id-type").click();
+    await page.getByRole("option", { name: "Passport" }).click();
+
+    // ── 6. Draw a signature on the canvas ────────────────────────────────
+    const canvas = page.getByTestId("signature-canvas");
+    await expect(canvas).toBeVisible({ timeout: 5_000 });
+
+    const box = await canvas.boundingBox();
+    if (box) {
+      await page.mouse.move(box.x + 20, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(
+        box.x + box.width - 20,
+        box.y + box.height / 2,
+        { steps: 10 }
+      );
+      await page.mouse.up();
+    }
+
+    // ── 7. Select an available room ───────────────────────────────────────
+    const roomSelect = page.getByTestId("select-room-number");
+    await roomSelect.click();
+    const firstRoom = page.getByRole("option").first();
+    await expect(firstRoom).toBeVisible({ timeout: 5_000 });
+    await firstRoom.click();
+
+    // ── 8. Submit the form ────────────────────────────────────────────────
+    await page.getByTestId("button-complete-checkin").click();
+
+    // ── 9. Assert the success panel with Print + Resend buttons ──────────
+    await expect(
+      page.locator('[data-testid="button-print-registration-card"]')
+    ).toBeVisible({ timeout: 15_000 });
+
+    await expect(
+      page.locator('[data-testid="button-resend-email"]')
+    ).toBeVisible();
+  });
 });

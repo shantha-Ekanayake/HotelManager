@@ -532,6 +532,11 @@ class MemStorage implements IHMSStorage {
     return updated;
   }
 
+  async deleteRoom(roomId: string): Promise<boolean> {
+    this.rooms.delete(roomId);
+    return true;
+  }
+
   // Room Type Management
   async getRoomType(id: string): Promise<RoomType | undefined> {
     return this.roomTypes.get(id);
@@ -558,6 +563,11 @@ class MemStorage implements IHMSStorage {
     const updated = { ...existing, ...roomType, updatedAt: new Date() };
     this.roomTypes.set(id, updated);
     return updated;
+  }
+
+  async deleteRoomType(roomTypeId: string): Promise<boolean> {
+    this.roomTypes.delete(roomTypeId);
+    return true;
   }
 
   // Guest Management
@@ -860,6 +870,11 @@ class MemStorage implements IHMSStorage {
     return updated;
   }
 
+  async deleteRatePlan(ratePlanId: string): Promise<boolean> {
+    this.ratePlans.delete(ratePlanId);
+    return true;
+  }
+
   // Stub implementations for remaining methods (simplified for demo)
   async getDailyRate(): Promise<DailyRate | undefined> { return undefined; }
   async getDailyRates(): Promise<DailyRate[]> { return []; }
@@ -965,6 +980,25 @@ class MemStorage implements IHMSStorage {
     const updated = { ...existing, ...reservation, updatedAt: new Date() };
     this.reservations.set(id, updated);
     return updated;
+  }
+
+  async deleteReservation(reservationId: string): Promise<boolean> {
+    // Remove associated folio and its charges/payments
+    const folio = Array.from(this.folios.values()).find(
+      (f) => f.reservationId === reservationId
+    );
+    if (folio) {
+      const folioId = folio.id;
+      this.charges.forEach((_c, cid) => {
+        if (_c.folioId === folioId) this.charges.delete(cid);
+      });
+      this.payments.forEach((_p, pid) => {
+        if (_p.folioId === folioId) this.payments.delete(pid);
+      });
+      this.folios.delete(folioId);
+    }
+    this.reservations.delete(reservationId);
+    return true;
   }
 
   // Folio Management

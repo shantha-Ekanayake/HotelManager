@@ -75,12 +75,14 @@ export interface IHMSStorage {
   getRoomByNumber(propertyId: string, roomNumber: string): Promise<Room | undefined>;
   createRoom(room: InsertRoom): Promise<Room>;
   updateRoom(id: string, room: Partial<InsertRoom>): Promise<Room>;
+  deleteRoom(roomId: string): Promise<boolean>;
   
   // Room Type Management
   getRoomType(id: string): Promise<RoomType | undefined>;
   getRoomTypesByProperty(propertyId: string): Promise<RoomType[]>;
   createRoomType(roomType: InsertRoomType): Promise<RoomType>;
   updateRoomType(id: string, roomType: Partial<InsertRoomType>): Promise<RoomType>;
+  deleteRoomType(roomTypeId: string): Promise<boolean>;
   
   // Guest Management
   getGuest(id: string): Promise<Guest | undefined>;
@@ -119,6 +121,7 @@ export interface IHMSStorage {
   getRatePlansByProperty(propertyId: string): Promise<RatePlan[]>;
   createRatePlan(ratePlan: InsertRatePlan): Promise<RatePlan>;
   updateRatePlan(id: string, ratePlan: Partial<InsertRatePlan>): Promise<RatePlan>;
+  deleteRatePlan(ratePlanId: string): Promise<boolean>;
   
   // Daily Rate Management
   getDailyRate(propertyId: string, roomTypeId: string, ratePlanId: string, date: Date): Promise<DailyRate | undefined>;
@@ -169,6 +172,7 @@ export interface IHMSStorage {
   getDeparturesToday(propertyId: string): Promise<Reservation[]>;
   createReservation(reservation: InsertReservation): Promise<Reservation>;
   updateReservation(id: string, reservation: Partial<InsertReservation>): Promise<Reservation>;
+  deleteReservation(reservationId: string): Promise<boolean>;
   
   // Folio Management
   getFolio(id: string): Promise<Folio | undefined>;
@@ -373,6 +377,11 @@ export class DatabaseStorage implements IHMSStorage {
     return result[0];
   }
 
+  async deleteRoom(roomId: string): Promise<boolean> {
+    await db.delete(rooms).where(eq(rooms.id, roomId));
+    return true;
+  }
+
   // Room Type Management
   async getRoomType(id: string): Promise<RoomType | undefined> {
     const result = await db.select().from(roomTypes).where(eq(roomTypes.id, id)).limit(1);
@@ -394,6 +403,11 @@ export class DatabaseStorage implements IHMSStorage {
     const updateData: any = { ...roomType, updatedAt: new Date() };
     const result = await db.update(roomTypes).set(updateData).where(eq(roomTypes.id, id)).returning();
     return result[0];
+  }
+
+  async deleteRoomType(roomTypeId: string): Promise<boolean> {
+    await db.delete(roomTypes).where(eq(roomTypes.id, roomTypeId));
+    return true;
   }
 
   // Guest Management
@@ -680,6 +694,11 @@ export class DatabaseStorage implements IHMSStorage {
     return result[0];
   }
 
+  async deleteRatePlan(ratePlanId: string): Promise<boolean> {
+    await db.delete(ratePlans).where(eq(ratePlans.id, ratePlanId));
+    return true;
+  }
+
   // Daily Rate Management
   async getDailyRate(propertyId: string, roomTypeId: string, ratePlanId: string, date: Date): Promise<DailyRate | undefined> {
     const result = await db.select().from(dailyRates)
@@ -789,6 +808,20 @@ export class DatabaseStorage implements IHMSStorage {
       updatedAt: new Date()
     }).where(eq(reservations.id, id)).returning();
     return result[0];
+  }
+
+  async deleteReservation(reservationId: string): Promise<boolean> {
+    // Delete associated folio (charges → payments → folio) before the reservation
+    const folioRows = await db.select().from(folios)
+      .where(eq(folios.reservationId, reservationId)).limit(1);
+    if (folioRows[0]) {
+      const folioId = folioRows[0].id;
+      await db.delete(charges).where(eq(charges.folioId, folioId));
+      await db.delete(payments).where(eq(payments.folioId, folioId));
+      await db.delete(folios).where(eq(folios.id, folioId));
+    }
+    await db.delete(reservations).where(eq(reservations.id, reservationId));
+    return true;
   }
 
   // Folio Management

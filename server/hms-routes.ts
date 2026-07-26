@@ -521,6 +521,83 @@ export function registerRoomRoutes(app: Express) {
       }
     }
   );
+
+  // ── Test-fixture teardown endpoints ────────────────────────────────────────
+  // These are intentionally restricted to non-production environments.
+  // They exist solely to let the Playwright E2E test clean up its own fixtures.
+  // In production (NODE_ENV=production) every request returns 404.
+
+  // Delete room (test teardown only)
+  app.delete("/api/rooms/:id",
+    authenticate,
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      try {
+        const { id } = req.params;
+        const room = await storage.getRoom(id);
+        if (!room) return res.status(404).json({ error: "Room not found" });
+        if (!req.user || !canAccessProperty(req.user, room.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        await storage.deleteRoom(id);
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Delete room error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Delete room type (test teardown only)
+  app.delete("/api/room-types/:id",
+    authenticate,
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      try {
+        const { id } = req.params;
+        const roomType = await storage.getRoomType(id);
+        if (!roomType) return res.status(404).json({ error: "Room type not found" });
+        if (!req.user || !canAccessProperty(req.user, roomType.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        await storage.deleteRoomType(id);
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Delete room type error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Delete rate plan (test teardown only)
+  app.delete("/api/rate-plans/:id",
+    authenticate,
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      try {
+        const { id } = req.params;
+        const ratePlan = await storage.getRatePlan(id);
+        if (!ratePlan) return res.status(404).json({ error: "Rate plan not found" });
+        if (!req.user || !canAccessProperty(req.user, ratePlan.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        await storage.deleteRatePlan(id);
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Delete rate plan error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
 }
 
 // Guest Management Routes
@@ -1421,6 +1498,30 @@ export function registerReservationRoutes(app: Express) {
       } catch (error) {
         console.error("Resend check-out email error:", error);
         res.status(500).json({ error: "Failed to send email" });
+      }
+    }
+  );
+
+  // Delete reservation (test teardown only — disabled in production)
+  app.delete("/api/reservations/:id",
+    authenticate,
+    authorize("reservations.manage"),
+    async (req: AuthRequest, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      try {
+        const { id } = req.params;
+        const reservation = await storage.getReservation(id);
+        if (!reservation) return res.status(404).json({ error: "Reservation not found" });
+        if (!req.user || !canAccessProperty(req.user, reservation.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        await storage.deleteReservation(id);
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Delete reservation error:", error);
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   );
