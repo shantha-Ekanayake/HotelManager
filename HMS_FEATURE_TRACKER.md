@@ -115,7 +115,7 @@
 - [ ] Deposit refund processing
 - [ ] Housekeeping notification
 - [ ] Guest satisfaction survey trigger
-- [ ] Checkout confirmation email
+- [x] Checkout confirmation email (sendCheckOutEmail via nodemailer; graceful no-op when SMTP_HOST not configured; "Resend Receipt Email" button available post-check-out)
 
 #### Front Desk Overview & Operations (95% Complete)
 - [x] Front Desk Overview Dashboard - Real-time statistics

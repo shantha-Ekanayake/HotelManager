@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { CreditCard, Receipt, Clock, Star, Loader2 } from "lucide-react";
+import { CheckCircle2, CreditCard, Loader2, Mail, Receipt, Clock, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Reservation, Guest, Folio, Charge, Payment } from "@shared/schema";
@@ -21,6 +22,9 @@ interface CheckOutFormProps {
 
 export default function CheckOutForm({ reservationId, onCheckOutComplete }: CheckOutFormProps) {
   const { toast } = useToast();
+
+  const [checkOutResult, setCheckOutResult] = useState<any>(null);
+  const [resendLoading, setResendLoading] = useState(false);
   
   const [checkOutDetails, setCheckOutDetails] = useState({
     departureTime: new Date().toTimeString().slice(0, 5),
@@ -50,7 +54,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
     mutationFn: async () => {
       return await apiRequest("POST", `/api/reservations/${reservationId}/check-out`);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Check-out Successful",
         description: "Guest has been checked out successfully",
@@ -61,7 +65,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/overview"] });
       queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
       queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
-      onCheckOutComplete?.(folioData);
+      setCheckOutResult(data);
     },
     onError: (error: any) => {
       toast({
@@ -71,6 +75,26 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       });
     }
   });
+
+  const handleResendEmail = async () => {
+    if (!reservationId) return;
+    setResendLoading(true);
+    try {
+      await apiRequest("POST", `/api/reservations/${reservationId}/send-checkout-email`, {});
+      toast({
+        title: "Email Sent",
+        description: "Departure receipt has been resent to the guest.",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Email Failed",
+        description: error.message || "Failed to send email.",
+      });
+    } finally {
+      setResendLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,6 +143,63 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
   const totalCharges = folio?.charges?.reduce((sum, c) => sum + parseFloat(c.amount), 0) || 0;
   const totalPayments = folio?.payments?.reduce((sum, p) => sum + parseFloat(p.amount), 0) || 0;
   const balance = totalCharges - totalPayments;
+
+  // Post-check-out success panel
+  if (checkOutResult) {
+    return (
+      <div className="space-y-6">
+        <Alert className="border-green-200 bg-green-50">
+          <CheckCircle2 className="h-5 w-5 text-green-600" />
+          <AlertTitle className="text-green-800">Check-Out Complete</AlertTitle>
+          <AlertDescription className="text-green-700">
+            {guest ? `${guest.firstName} ${guest.lastName} has been successfully checked out.` : "Guest has been successfully checked out."}
+            {guest?.email
+              ? " A departure receipt was emailed — use Resend below if it was not received."
+              : " No email address on file — add one to the guest profile and use Resend below."}
+          </AlertDescription>
+        </Alert>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Post Check-Out Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => window.print()}
+              data-testid="button-print-receipt-success"
+            >
+              <Receipt className="h-4 w-4 mr-2" />
+              Print Receipt
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleResendEmail}
+              disabled={resendLoading}
+              data-testid="button-resend-receipt-email"
+            >
+              {resendLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4 mr-2" />
+              )}
+              Resend Receipt Email
+            </Button>
+            <div className="flex-1" />
+            <Button
+              type="button"
+              onClick={() => onCheckOutComplete?.(checkOutResult)}
+              data-testid="button-done-checkout"
+            >
+              Done
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">

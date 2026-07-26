@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "./storage";
-import { sendCheckInEmail } from "./email-service";
+import { sendCheckInEmail, sendCheckOutEmail } from "./email-service";
 import { 
   authenticate, 
   authorize, 
@@ -1349,11 +1349,64 @@ export function registerReservationRoutes(app: Express) {
         if (reservation.roomId) {
           await storage.updateRoom(reservation.roomId, { status: "dirty" });
         }
+
+        // Send departure receipt email (non-blocking)
+        try {
+          const guest = await storage.getGuest(reservation.guestId);
+          const property = await storage.getProperty(reservation.propertyId);
+          const folio = await storage.getFolioByReservation(id);
+          if (guest && folio) {
+            const charges = await storage.getChargesByFolio(folio.id);
+            const payments = await storage.getPaymentsByFolio(folio.id);
+            await sendCheckOutEmail(
+              guest,
+              reservation,
+              { charges, payments },
+              property?.name || "Our Hotel"
+            );
+          }
+        } catch (emailErr) {
+          console.error("Failed to send check-out email:", emailErr);
+          // Non-fatal — continue
+        }
         
         res.json({ reservation: updatedReservation });
       } catch (error) {
         console.error("Check-out error:", error);
         res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Resend check-out receipt email
+  app.post("/api/reservations/:id/send-checkout-email",
+    authenticate,
+    authorize("check_out.process"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+        const guest = await storage.getGuest(reservation.guestId);
+        if (!guest) {
+          return res.status(404).json({ error: "Guest not found" });
+        }
+        const property = await storage.getProperty(reservation.propertyId);
+        const folio = await storage.getFolioByReservation(id);
+        const charges = folio ? await storage.getChargesByFolio(folio.id) : [];
+        const payments = folio ? await storage.getPaymentsByFolio(folio.id) : [];
+        await sendCheckOutEmail(
+          guest,
+          reservation,
+          { charges, payments },
+          property?.name || "Our Hotel"
+        );
+        res.json({ success: true, message: "Check-out receipt email sent" });
+      } catch (error) {
+        console.error("Resend check-out email error:", error);
+        res.status(500).json({ error: "Failed to send email" });
       }
     }
   );
