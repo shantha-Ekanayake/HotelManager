@@ -200,7 +200,7 @@ export async function sendCheckOutEmail(
   reservation: ReservationInfo,
   folio: FolioInfo,
   propertyName: string
-): Promise<void> {
+): Promise<"sent" | "skipped"> {
   const smtpHost = process.env.SMTP_HOST;
 
   if (!smtpHost) {
@@ -209,12 +209,12 @@ export async function sendCheckOutEmail(
     const totalPayments = (folio.payments || []).reduce((s, p) => s + Number(p.amount), 0);
     console.log("[EMAIL] SMTP not configured. Would have sent check-out receipt to:", guest.email);
     console.log(`[EMAIL] Confirmation: ${reservation.confirmationNumber} | Charges: Rs ${totalCharges.toFixed(2)} | Payments: Rs ${totalPayments.toFixed(2)} | Balance: Rs ${(totalCharges - totalPayments).toFixed(2)} | Property: ${propertyName}`);
-    return;
+    return "skipped";
   }
 
   if (!guest.email) {
     console.log("[EMAIL] Guest has no email address. Skipping check-out receipt for confirmation:", reservation.confirmationNumber);
-    return;
+    return "skipped";
   }
 
   const transporter = nodemailer.createTransport({
@@ -240,6 +240,7 @@ export async function sendCheckOutEmail(
   });
 
   console.log("[EMAIL] Check-out receipt email sent to:", guest.email, "| Confirmation:", reservation.confirmationNumber);
+  return "sent";
 }
 
 export async function sendCheckInEmail(

@@ -1442,6 +1442,7 @@ export function registerReservationRoutes(app: Express) {
         }
 
         // Send departure receipt email (non-blocking)
+        let emailStatus: "sent" | "skipped" | "failed" = "skipped";
         try {
           const guest = await storage.getGuest(reservation.guestId);
           const property = await storage.getProperty(reservation.propertyId);
@@ -1449,19 +1450,32 @@ export function registerReservationRoutes(app: Express) {
           if (guest && folio) {
             const charges = await storage.getChargesByFolio(folio.id);
             const payments = await storage.getPaymentsByFolio(folio.id);
-            await sendCheckOutEmail(
+            emailStatus = await sendCheckOutEmail(
               guest,
               reservation,
               { charges, payments },
               property?.name || "Our Hotel"
             );
           }
-        } catch (emailErr) {
+        } catch (emailErr: any) {
           console.error("Failed to send check-out email:", emailErr);
-          // Non-fatal — continue
+          emailStatus = "failed";
+          // Record the failure in guest_communications so staff have an audit trail
+          try {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Departure receipt – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Email delivery failed during check-out. Error: ${emailErr?.message || String(emailErr)}`,
+              staffId: req.user?.id || null
+            });
+          } catch (logErr) {
+            console.error("Failed to log email failure to guest_communications:", logErr);
+          }
         }
         
-        res.json({ reservation: updatedReservation });
+        res.json({ reservation: updatedReservation, emailStatus });
       } catch (error) {
         console.error("Check-out error:", error);
         res.status(500).json({ error: "Internal server error" });

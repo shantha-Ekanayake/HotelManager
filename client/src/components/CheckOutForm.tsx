@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { CheckCircle2, CreditCard, Loader2, Mail, Receipt, Clock, Star } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CreditCard, Loader2, Mail, Receipt, Clock, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Reservation, Guest, Folio, Charge, Payment } from "@shared/schema";
@@ -53,7 +53,8 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
 
   const checkOutMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", `/api/reservations/${reservationId}/check-out`);
+      const response = await apiRequest("POST", `/api/reservations/${reservationId}/check-out`);
+      return response.json();
     },
     onSuccess: (data) => {
       toast({
@@ -178,6 +179,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
 
   // Post-check-out success panel
   if (checkOutResult) {
+    const emailStatus = checkOutResult.emailStatus as "sent" | "skipped" | "failed" | undefined;
     return (
       <div className="space-y-6">
         <Alert className="border-green-200 bg-green-50">
@@ -185,11 +187,26 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           <AlertTitle className="text-green-800">Check-Out Complete</AlertTitle>
           <AlertDescription className="text-green-700">
             {guest ? `${guest.firstName} ${guest.lastName} has been successfully checked out.` : "Guest has been successfully checked out."}
-            {guest?.email
+            {emailStatus === "sent"
+              ? " A departure receipt was emailed — use Resend below if it was not received."
+              : emailStatus === "failed"
+              ? ""
+              : guest?.email
               ? " A departure receipt was emailed — use Resend below if it was not received."
               : " No email address on file — add one to the guest profile and use Resend below."}
           </AlertDescription>
         </Alert>
+
+        {emailStatus === "failed" && (
+          <Alert className="border-yellow-300 bg-yellow-50" data-testid="alert-email-failed">
+            <AlertTriangle className="h-5 w-5 text-yellow-600" />
+            <AlertTitle className="text-yellow-800">Departure Receipt Email Failed</AlertTitle>
+            <AlertDescription className="text-yellow-700">
+              The departure receipt could not be delivered to the guest. The failure has been logged.
+              Use <strong>Resend Receipt Email</strong> below to try again, or print a copy for the guest.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Card>
           <CardHeader>
