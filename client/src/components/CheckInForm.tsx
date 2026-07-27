@@ -12,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Calendar, Clock, User, CreditCard, KeyRound, Phone, Mail, Loader2, ShieldCheck, PenLine, CheckCircle2, Printer, Send, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Reservation, Guest, Room } from "@shared/schema";
+import type { Reservation, Guest, Room, Property } from "@shared/schema";
 import SignaturePad from "./SignaturePad";
 import { printRegistrationCard } from "./RegistrationCardPrint";
 
@@ -63,6 +63,10 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
 
   const { data: availableRoomsData, isLoading: roomsLoading } = useQuery<{ rooms: Room[] }>({
     queryKey: ["/api/front-desk/available-rooms"]
+  });
+
+  const { data: propertiesData } = useQuery<{ properties: Property[] }>({
+    queryKey: ["/api/properties"]
   });
 
   // Pre-populate ID fields from guest record when guest loads
@@ -141,6 +145,11 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
     const res = reservation?.reservation;
     const g = guestData?.guest;
     const room = availableRoomsData?.rooms.find(r => r.id === selectedRoomId);
+    const property = propertiesData?.properties?.[0];
+    const propertyAddressParts = property
+      ? [property.address, property.city, property.state, property.country, property.postalCode].filter(Boolean)
+      : [];
+    const propertyAddress = propertyAddressParts.length > 0 ? propertyAddressParts.join(", ") : undefined;
 
     printRegistrationCard({
       guestName: g ? `${g.firstName} ${g.lastName}` : "Guest",
@@ -158,7 +167,9 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
       depositAmount: checkInDetails.depositAmount,
       depositPaid: !!checkInDetails.depositAmount && parseFloat(checkInDetails.depositAmount) > 0,
       signature: signature,
-      propertyName: "Hotel Management System"
+      propertyName: property?.name || "Hotel Management System",
+      propertyAddress,
+      propertyPhone: property?.phone ?? undefined,
     });
   };
 

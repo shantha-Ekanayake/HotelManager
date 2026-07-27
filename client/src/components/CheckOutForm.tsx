@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AlertTriangle, CheckCircle2, CreditCard, Loader2, Mail, Receipt, Clock, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Reservation, Guest, Folio, Charge, Payment } from "@shared/schema";
+import type { Reservation, Guest, Folio, Charge, Payment, Property } from "@shared/schema";
 import { printReceipt } from "./ReceiptPrint";
 
 interface CheckOutFormProps {
@@ -51,6 +51,10 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
     enabled: !!folioData?.reservation?.guestId
   });
 
+  const { data: propertiesData } = useQuery<{ properties: Property[] }>({
+    queryKey: ["/api/properties"]
+  });
+
   const checkOutMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", `/api/reservations/${reservationId}/check-out`);
@@ -79,6 +83,12 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
   });
 
   const handlePrintReceipt = () => {
+    const property = propertiesData?.properties?.[0];
+    const propertyAddressParts = property
+      ? [property.address, property.city, property.state, property.country, property.postalCode].filter(Boolean)
+      : [];
+    const propertyAddress = propertyAddressParts.length > 0 ? propertyAddressParts.join(", ") : undefined;
+
     printReceipt({
       guestName: guest ? `${guest.firstName} ${guest.lastName}` : "Guest",
       guestEmail: guest?.email,
@@ -105,7 +115,9 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       totalCharges,
       totalPayments,
       balance,
-      propertyName: "Hotel Management System",
+      propertyName: property?.name || "Hotel Management System",
+      propertyAddress,
+      propertyPhone: property?.phone ?? undefined,
     });
   };
 
