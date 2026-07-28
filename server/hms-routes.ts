@@ -542,6 +542,14 @@ export function registerRoomRoutes(app: Express) {
         if (!req.user || !canAccessProperty(req.user, room.propertyId)) {
           return res.status(403).json({ error: "Access denied" });
         }
+        // Guard: refuse to delete rooms that still have live (non-cancelled) reservations
+        const activeReservations = await storage.getActiveReservationsByRoom(id);
+        if (activeReservations.length > 0) {
+          return res.status(409).json({
+            error: "Cannot delete room with active reservations",
+            details: `Room has ${activeReservations.length} non-cancelled reservation(s). Cancel them first.`
+          });
+        }
         await storage.deleteRoom(id);
         res.json({ success: true });
       } catch (error) {
@@ -1530,6 +1538,18 @@ export function registerReservationRoutes(app: Express) {
         if (!reservation) return res.status(404).json({ error: "Reservation not found" });
         if (!req.user || !canAccessProperty(req.user, reservation.propertyId)) {
           return res.status(403).json({ error: "Access denied" });
+        }
+        // Guard: refuse to delete operational records unless they are explicitly
+        // tagged as E2E test fixtures in their notes field.
+        // Fixture marker convention: notes must contain "E2E_TEST_FIXTURE".
+        const isTestFixture = typeof reservation.notes === "string" &&
+          reservation.notes.includes("E2E_TEST_FIXTURE");
+        const protectedStatuses = ["checked_in", "checked_out", "no_show"] as const;
+        if (!isTestFixture && (protectedStatuses as readonly string[]).includes(reservation.status)) {
+          return res.status(409).json({
+            error: "Cannot delete reservation with operational status",
+            details: `Reservation has status '${reservation.status}' and is not marked as a test fixture. Only test-fixture reservations (notes containing 'E2E_TEST_FIXTURE') or non-operational reservations can be deleted.`
+          });
         }
         await storage.deleteReservation(id);
         res.json({ success: true });

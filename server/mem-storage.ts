@@ -537,6 +537,12 @@ class MemStorage implements IHMSStorage {
     return true;
   }
 
+  async getActiveReservationsByRoom(roomId: string): Promise<Reservation[]> {
+    return Array.from(this.reservations.values()).filter(
+      (r) => r.roomId === roomId && r.status !== "cancelled"
+    );
+  }
+
   // Room Type Management
   async getRoomType(id: string): Promise<RoomType | undefined> {
     return this.roomTypes.get(id);

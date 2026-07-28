@@ -76,6 +76,7 @@ export interface IHMSStorage {
   createRoom(room: InsertRoom): Promise<Room>;
   updateRoom(id: string, room: Partial<InsertRoom>): Promise<Room>;
   deleteRoom(roomId: string): Promise<boolean>;
+  getActiveReservationsByRoom(roomId: string): Promise<Reservation[]>;
   
   // Room Type Management
   getRoomType(id: string): Promise<RoomType | undefined>;
@@ -380,6 +381,14 @@ export class DatabaseStorage implements IHMSStorage {
   async deleteRoom(roomId: string): Promise<boolean> {
     await db.delete(rooms).where(eq(rooms.id, roomId));
     return true;
+  }
+
+  async getActiveReservationsByRoom(roomId: string): Promise<Reservation[]> {
+    return await db.select().from(reservations)
+      .where(and(
+        eq(reservations.roomId, roomId),
+        sql`${reservations.status} != 'cancelled'`
+      ));
   }
 
   // Room Type Management

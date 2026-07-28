@@ -182,6 +182,7 @@ test.describe("check-out flow (self-contained fixtures)", () => {
             adults:        1,
             children:      0,
             totalAmount:   "150",
+            notes:         "E2E_TEST_FIXTURE",
           },
         });
         if (resRes.ok()) {

@@ -152,6 +152,7 @@ test.describe("receipt print popup (self-contained fixtures)", () => {
             adults:        1,
             children:      0,
             totalAmount:   "200",
+            notes:         "E2E_TEST_FIXTURE",
           },
         });
         if (resRes.ok()) {
