@@ -1510,15 +1510,47 @@ export function registerReservationRoutes(app: Express) {
         const folio = await storage.getFolioByReservation(id);
         const charges = folio ? await storage.getChargesByFolio(folio.id) : [];
         const payments = folio ? await storage.getPaymentsByFolio(folio.id) : [];
-        await sendCheckOutEmail(
+        const emailStatus = await sendCheckOutEmail(
           guest,
           reservation,
           { charges, payments },
           property?.name || "Our Hotel"
         );
-        res.json({ success: true, message: "Check-out receipt email sent" });
-      } catch (error) {
+        if (emailStatus === "failed") {
+          // Record the resend failure so staff have an audit trail
+          try {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Departure receipt resend – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Resend of departure receipt email failed (email service returned failure).`,
+              staffId: req.user?.id || null
+            });
+          } catch (logErr) {
+            console.error("Failed to log resend failure to guest_communications:", logErr);
+          }
+          return res.status(502).json({ error: "Email service failed to deliver the message", emailStatus: "failed" });
+        }
+        res.json({ success: true, message: "Check-out receipt email sent", emailStatus });
+      } catch (error: any) {
         console.error("Resend check-out email error:", error);
+        // Log the exception-level failure too
+        try {
+          const reservation = await storage.getReservation(req.params.id);
+          if (reservation) {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Departure receipt resend – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Resend of departure receipt email failed. Error: ${error?.message || String(error)}`,
+              staffId: req.user?.id || null
+            });
+          }
+        } catch (logErr) {
+          console.error("Failed to log resend exception to guest_communications:", logErr);
+        }
         res.status(500).json({ error: "Failed to send email" });
       }
     }

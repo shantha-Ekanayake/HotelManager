@@ -26,6 +26,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
 
   const [checkOutResult, setCheckOutResult] = useState<any>(null);
   const [resendLoading, setResendLoading] = useState(false);
+  const [resendFailed, setResendFailed] = useState(false);
   
   const [checkOutDetails, setCheckOutDetails] = useState({
     departureTime: new Date().toTimeString().slice(0, 5),
@@ -124,6 +125,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
   const handleResendEmail = async () => {
     if (!reservationId) return;
     setResendLoading(true);
+    setResendFailed(false);
     try {
       await apiRequest("POST", `/api/reservations/${reservationId}/send-checkout-email`, {});
       toast({
@@ -131,6 +133,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
         description: "Departure receipt has been resent to the guest.",
       });
     } catch (error: any) {
+      setResendFailed(true);
       toast({
         variant: "destructive",
         title: "Email Failed",
@@ -216,6 +219,17 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
             <AlertDescription className="text-yellow-700">
               The departure receipt could not be delivered to the guest. The failure has been logged.
               Use <strong>Resend Receipt Email</strong> below to try again, or print a copy for the guest.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {resendFailed && (
+          <Alert className="border-red-300 bg-red-50" data-testid="alert-resend-failed">
+            <AlertTriangle className="h-5 w-5 text-red-600" />
+            <AlertTitle className="text-red-800">Resend Failed</AlertTitle>
+            <AlertDescription className="text-red-700">
+              The departure receipt could not be delivered. This failure has been logged to the guest&apos;s communication history.
+              Please print a copy for the guest or try again later.
             </AlertDescription>
           </Alert>
         )}
