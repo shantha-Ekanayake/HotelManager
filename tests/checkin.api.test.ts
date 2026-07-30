@@ -9,8 +9,16 @@
 import { vi, describe, it, expect, beforeAll } from "vitest";
 import { memStorage } from "../server/mem-storage.js";
 
-// ── hoisted mock ────────────────────────────────────────────────────────────
+// ── hoisted mocks ───────────────────────────────────────────────────────────
 vi.mock("../server/storage.js", () => ({ storage: memStorage }));
+
+// Spy on the email service so we can inspect call arguments without real SMTP.
+// The implementation returns "skipped" by default (mirrors the no-SMTP path).
+const sendCheckInEmailMock = vi.fn().mockResolvedValue("skipped");
+vi.mock("../server/email-service.js", () => ({
+  sendCheckInEmail: (...args: unknown[]) => sendCheckInEmailMock(...args),
+  sendCheckOutEmail: vi.fn().mockResolvedValue("skipped"),
+}));
 
 // ── imports that depend on the mocked storage ───────────────────────────────
 import express from "express";
@@ -207,6 +215,73 @@ describe("POST /api/reservations/:id/check-in", () => {
       .send({ roomId: "room-101", depositAmount: "0", paymentMethod: "cash" });
 
     expect(res.status).toBe(401);
+  });
+
+  it("silently skips the email (does not error) when the guest has no email address", async () => {
+    // Create a guest with email: null
+    const noEmailGuest = await memStorage.createGuest({
+      firstName: "NoEmail",
+      lastName: "Guest",
+      email: null,
+      phone: null,
+      address: null,
+      city: null,
+      state: null,
+      country: null,
+      postalCode: null,
+      idType: null,
+      idNumber: null,
+      nationality: null,
+      vipStatus: false,
+      notes: null,
+      dateOfBirth: null,
+      preferences: {},
+    });
+
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const noEmailReservation = await memStorage.createReservation({
+      propertyId: "prop-demo",
+      guestId: noEmailGuest.id,
+      roomTypeId: "rt-standard",
+      ratePlanId: "rp-standard",
+      status: "confirmed",
+      arrivalDate: today,
+      departureDate: tomorrow,
+      nights: 1,
+      adults: 1,
+      children: 0,
+      totalAmount: "150.00",
+      depositAmount: null,
+      depositPaid: false,
+      specialRequests: null,
+      roomId: null,
+      checkInTime: null,
+      checkOutTime: null,
+      guestSignature: null,
+      notes: null,
+    });
+
+    sendCheckInEmailMock.mockClear();
+
+    const res = await request(app)
+      .post(`/api/reservations/${noEmailReservation.id}/check-in`)
+      .set("Authorization", authHeader)
+      .send({ roomId: "room-301", depositAmount: "0", paymentMethod: "cash" });
+
+    // The endpoint must succeed even when the guest has no email
+    expect(res.status).toBe(200);
+
+    // sendCheckInEmail must have been called — the route reaches the service
+    // and the service itself decides to skip (not the route short-circuiting).
+    expect(sendCheckInEmailMock).toHaveBeenCalledOnce();
+
+    // The guest argument passed to the service must have a falsy email,
+    // confirming the service received the no-email guest and chose to skip.
+    const guestArg = sendCheckInEmailMock.mock.calls[0][0] as { email?: string | null };
+    expect(guestArg.email).toBeFalsy();
   });
 });
 
