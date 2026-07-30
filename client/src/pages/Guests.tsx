@@ -723,7 +723,19 @@ export default function Guests() {
                     <TabsTrigger value="profile" data-testid="tab-profile">Profile</TabsTrigger>
                     <TabsTrigger value="loyalty" data-testid="tab-loyalty">Loyalty</TabsTrigger>
                     <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
-                    <TabsTrigger value="communications" data-testid="tab-communications">Comms</TabsTrigger>
+                    <TabsTrigger value="communications" data-testid="tab-communications" className="flex items-center gap-1.5">
+                      Comms
+                      {(() => {
+                        const failedCount = (communicationsData as any)?.communications?.filter(
+                          (c: GuestCommunication) => c.subject?.includes("[FAILED]") || c.content?.toLowerCase().includes("delivery failed")
+                        )?.length ?? 0;
+                        return failedCount > 0 ? (
+                          <span className="inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[1.25rem]" data-testid="badge-failed-email-count">
+                            {failedCount} failed
+                          </span>
+                        ) : null;
+                      })()}
+                    </TabsTrigger>
                     <TabsTrigger value="preferences" data-testid="tab-preferences">Preferences</TabsTrigger>
                   </TabsList>
 
