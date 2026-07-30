@@ -946,7 +946,7 @@ export default function Guests() {
                     {!(communicationsData as any)?.communications ? (
                       <div className="text-center py-4 text-muted-foreground">Loading...</div>
                     ) : (communicationsData as any)?.communications?.length === 0 ? (
-                      <div className="text-center py-4 text-muted-foreground">No communications logged</div>
+                      <div className="text-center py-4 text-muted-foreground" data-testid="text-no-communications">No communications logged</div>
                     ) : (
                       <div className="space-y-3">
                         {(communicationsData as any)?.communications?.map((comm: GuestCommunication) => {
