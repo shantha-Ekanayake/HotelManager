@@ -1,27 +1,47 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import ReservationCard from "@/components/ReservationCard";
 import { NewReservationDialog } from "@/components/NewReservationDialog";
+import CheckInForm from "@/components/CheckInForm";
+import CheckOutForm from "@/components/CheckOutForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Search, Plus, Filter } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { queryClient } from "@/lib/queryClient";
 import type { Reservation } from "@shared/schema";
 
 export default function Reservations() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isNewReservationOpen, setIsNewReservationOpen] = useState(false);
+  const [checkInReservationId, setCheckInReservationId] = useState<string | null>(null);
+  const [checkOutReservationId, setCheckOutReservationId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<{ reservations: Reservation[] }>({
     queryKey: ["/api/properties", user?.propertyId, "reservations"],
     enabled: !!user?.propertyId,
   });
 
+  const { data: guestsData } = useQuery<{ guests: any[] }>({
+    queryKey: ["/api/guests"],
+  });
+
+  const { data: roomsData } = useQuery<{ rooms: any[] }>({
+    queryKey: [`/api/properties/${user?.propertyId}/rooms`],
+    enabled: !!user?.propertyId,
+  });
+
   const reservations = data?.reservations || [];
+  const guests = guestsData?.guests || [];
+  const guestMap = new Map(guests.map(g => [g.id, `${g.firstName} ${g.lastName}`]));
+  const roomMap = new Map((roomsData?.rooms || []).map((r: any) => [r.id, r.roomNumber]));
 
   const filteredReservations = reservations.filter(reservation => {
     const matchesSearch = 
@@ -96,17 +116,17 @@ export default function Reservations() {
               <ReservationCard
                 key={reservation.id}
                 id={reservation.confirmationNumber}
-                guestName={`Guest #${reservation.guestId.substring(0, 8)}`}
-                roomNumber={reservation.roomId || "TBA"}
+                guestName={guestMap.get(reservation.guestId) || `Guest #${reservation.guestId.substring(0, 8)}`}
+                roomNumber={roomMap.get(reservation.roomId || '') || "TBA"}
                 roomType="Room"
                 checkIn={new Date(reservation.arrivalDate).toLocaleDateString()}
                 checkOut={new Date(reservation.departureDate).toLocaleDateString()}
                 status={reservation.status.replace('_', '-') as "confirmed" | "pending" | "checked-in" | "checked-out" | "cancelled"}
                 totalAmount={parseFloat(reservation.totalAmount)}
                 guestEmail=""
-                onCheckIn={() => console.log(`Check in ${reservation.id}`)}
-                onCheckOut={() => console.log(`Check out ${reservation.id}`)}
-                onViewDetails={() => console.log(`View details ${reservation.id}`)}
+                onCheckIn={() => setCheckInReservationId(reservation.id)}
+                onCheckOut={() => setCheckOutReservationId(reservation.id)}
+                onViewDetails={() => setLocation('/guests')}
               />
             ))}
           </div>
@@ -127,6 +147,46 @@ export default function Reservations() {
         open={isNewReservationOpen}
         onOpenChange={setIsNewReservationOpen}
       />
+
+      <Dialog open={!!checkInReservationId} onOpenChange={(open) => !open && setCheckInReservationId(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Guest Check-In</DialogTitle>
+            <DialogDescription>
+              Complete the check-in process by selecting a room and verifying guest information.
+            </DialogDescription>
+          </DialogHeader>
+          {checkInReservationId && (
+            <CheckInForm
+              reservationId={checkInReservationId}
+              onCheckInComplete={() => {
+                setCheckInReservationId(null);
+                queryClient.invalidateQueries({ queryKey: ["/api/properties", user?.propertyId, "reservations"] });
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!checkOutReservationId} onOpenChange={(open) => !open && setCheckOutReservationId(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Guest Check-Out</DialogTitle>
+            <DialogDescription>
+              Complete the check-out process by reviewing charges and processing payment.
+            </DialogDescription>
+          </DialogHeader>
+          {checkOutReservationId && (
+            <CheckOutForm
+              reservationId={checkOutReservationId}
+              onCheckOutComplete={() => {
+                setCheckOutReservationId(null);
+                queryClient.invalidateQueries({ queryKey: ["/api/properties", user?.propertyId, "reservations"] });
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

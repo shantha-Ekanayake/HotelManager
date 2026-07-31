@@ -723,7 +723,19 @@ export default function Guests() {
                     <TabsTrigger value="profile" data-testid="tab-profile">Profile</TabsTrigger>
                     <TabsTrigger value="loyalty" data-testid="tab-loyalty">Loyalty</TabsTrigger>
                     <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
-                    <TabsTrigger value="communications" data-testid="tab-communications">Comms</TabsTrigger>
+                    <TabsTrigger value="communications" data-testid="tab-communications" className="flex items-center gap-1.5">
+                      Comms
+                      {(() => {
+                        const failedCount = (communicationsData as any)?.communications?.filter(
+                          (c: GuestCommunication) => c.subject?.includes("[FAILED]") || c.content?.toLowerCase().includes("delivery failed")
+                        )?.length ?? 0;
+                        return failedCount > 0 ? (
+                          <span className="inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[1.25rem]" data-testid="badge-failed-email-count">
+                            {failedCount} failed
+                          </span>
+                        ) : null;
+                      })()}
+                    </TabsTrigger>
                     <TabsTrigger value="preferences" data-testid="tab-preferences">Preferences</TabsTrigger>
                   </TabsList>
 
@@ -931,27 +943,45 @@ export default function Guests() {
                         <Plus className="h-4 w-4 mr-1" />New Entry
                       </Button>
                     </div>
-                    {(communicationsData as any)?.communications?.length === 0 ? (
-                      <div className="text-center py-4 text-muted-foreground">No communications logged</div>
+                    {!(communicationsData as any)?.communications ? (
+                      <div className="text-center py-4 text-muted-foreground">Loading...</div>
+                    ) : (communicationsData as any)?.communications?.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground" data-testid="text-no-communications">No communications logged</div>
                     ) : (
                       <div className="space-y-3">
-                        {(communicationsData as any)?.communications?.map((comm: GuestCommunication) => (
-                          <div key={comm.id} className="border rounded-lg p-3" data-testid={`card-communication-${comm.id}`}>
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <Badge variant={comm.direction === "inbound" ? "default" : "outline"}>
-                                  {comm.direction}
-                                </Badge>
-                                <Badge variant="secondary">{comm.type}</Badge>
+                        {(communicationsData as any)?.communications?.map((comm: GuestCommunication) => {
+                          const isFailed = comm.subject?.includes("[FAILED]") || comm.content?.toLowerCase().includes("delivery failed");
+                          return (
+                            <div
+                              key={comm.id}
+                              className={`border rounded-lg p-3 ${isFailed ? "border-destructive/60 bg-destructive/5" : ""}`}
+                              data-testid={`card-communication-${comm.id}`}
+                            >
+                              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge variant={comm.direction === "inbound" ? "default" : "outline"}>
+                                    {comm.direction}
+                                  </Badge>
+                                  <Badge variant="secondary">{comm.type}</Badge>
+                                  {isFailed && (
+                                    <Badge variant="destructive" className="flex items-center gap-1" data-testid={`badge-failed-${comm.id}`}>
+                                      <AlertTriangle className="h-3 w-3" />Failed
+                                    </Badge>
+                                  )}
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                  {format(new Date(comm.createdAt), "MMM dd, yyyy HH:mm")}
+                                </span>
                               </div>
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(comm.createdAt), "MMM dd, yyyy HH:mm")}
-                              </span>
+                              {comm.subject && (
+                                <p className="font-medium text-sm mb-1" data-testid={`text-comm-subject-${comm.id}`}>
+                                  {comm.subject.replace(" [FAILED]", "")}
+                                </p>
+                              )}
+                              <p className="text-sm text-muted-foreground" data-testid={`text-comm-content-${comm.id}`}>{comm.content}</p>
                             </div>
-                            {comm.subject && <p className="font-medium text-sm">{comm.subject}</p>}
-                            <p className="text-sm text-muted-foreground">{comm.content}</p>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </TabsContent>

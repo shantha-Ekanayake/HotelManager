@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "./storage";
+import { sendCheckInEmail, sendCheckOutEmail } from "./email-service";
 import { 
   authenticate, 
   authorize, 
@@ -516,6 +517,91 @@ export function registerRoomRoutes(app: Express) {
         res.json({ room });
       } catch (error) {
         console.error("Update room error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // ── Test-fixture teardown endpoints ────────────────────────────────────────
+  // These are intentionally restricted to non-production environments.
+  // They exist solely to let the Playwright E2E test clean up its own fixtures.
+  // In production (NODE_ENV=production) every request returns 404.
+
+  // Delete room (test teardown only)
+  app.delete("/api/rooms/:id",
+    authenticate,
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      try {
+        const { id } = req.params;
+        const room = await storage.getRoom(id);
+        if (!room) return res.status(404).json({ error: "Room not found" });
+        if (!req.user || !canAccessProperty(req.user, room.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        // Guard: refuse to delete rooms that still have live (non-cancelled) reservations
+        const activeReservations = await storage.getActiveReservationsByRoom(id);
+        if (activeReservations.length > 0) {
+          return res.status(409).json({
+            error: "Cannot delete room with active reservations",
+            details: `Room has ${activeReservations.length} non-cancelled reservation(s). Cancel them first.`
+          });
+        }
+        await storage.deleteRoom(id);
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Delete room error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Delete room type (test teardown only)
+  app.delete("/api/room-types/:id",
+    authenticate,
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      try {
+        const { id } = req.params;
+        const roomType = await storage.getRoomType(id);
+        if (!roomType) return res.status(404).json({ error: "Room type not found" });
+        if (!req.user || !canAccessProperty(req.user, roomType.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        await storage.deleteRoomType(id);
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Delete room type error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Delete rate plan (test teardown only)
+  app.delete("/api/rate-plans/:id",
+    authenticate,
+    authorize("rooms.manage"),
+    async (req: AuthRequest, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      try {
+        const { id } = req.params;
+        const ratePlan = await storage.getRatePlan(id);
+        if (!ratePlan) return res.status(404).json({ error: "Rate plan not found" });
+        if (!req.user || !canAccessProperty(req.user, ratePlan.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        await storage.deleteRatePlan(id);
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Delete rate plan error:", error);
         res.status(500).json({ error: "Internal server error" });
       }
     }
@@ -1153,22 +1239,28 @@ export function registerReservationRoutes(app: Express) {
         }, true);
         
         if (!result.success) {
-          if (result.error?.includes("No rooms available")) {
-            return res.status(409).json({ 
-              error: result.error,
-              availability: result.availability
-            });
-          }
-          if (result.error?.includes("booking restrictions")) {
-            return res.status(409).json({ 
-              error: result.error,
-              restrictions: result.availability?.restrictions
-            });
-          }
-          return res.status(500).json({ error: result.error || "Reservation creation failed" });
+          return res.status(400).json({ 
+            error: "Room Not Available", 
+            message: "We're sorry, but the selected room is no longer available for the requested dates. Please choose a different room or adjust your dates." 
+          });
         }
         
-        res.status(201).json({ reservation: result.reservation });
+        // Create folio automatically for the reservation
+        const reservation = result.reservation!;
+        const depositAmt = reservation.depositAmount || "0.00";
+        const folio = await storage.createFolio({
+          propertyId: reservation.propertyId,
+          reservationId: reservation.id,
+          guestId: reservation.guestId,
+          status: "open",
+          totalCharges: reservation.totalAmount,
+          totalPayments: reservation.depositPaid ? depositAmt : "0.00",
+          balance: reservation.depositPaid 
+            ? (parseFloat(reservation.totalAmount) - parseFloat(depositAmt)).toFixed(2)
+            : reservation.totalAmount
+        });
+        
+        res.status(201).json({ reservation, folio });
       } catch (error) {
         if (error instanceof z.ZodError) {
           return res.status(400).json({ error: "Validation error", details: error.errors });
@@ -1207,23 +1299,128 @@ export function registerReservationRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
-        const { roomId } = req.body;
+        const { roomId, depositAmount, paymentMethod, idType, idNumber, nationality, signature } = req.body;
         
-        const reservation = await storage.updateReservation(id, {
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+
+        const updatedReservation = await storage.updateReservation(id, {
           status: "checked_in",
           roomId,
-          checkInTime: new Date()
+          checkInTime: new Date(),
+          depositAmount: depositAmount ? depositAmount.toString() : reservation.depositAmount,
+          depositPaid: !!depositAmount,
+          guestSignature: signature || null
         } as any);
         
+        // Update guest ID fields if provided
+        if (reservation.guestId && (idType || idNumber || nationality)) {
+          await storage.updateGuest(reservation.guestId, {
+            ...(idType ? { idType } : {}),
+            ...(idNumber ? { idNumber } : {}),
+            ...(nationality ? { nationality } : {})
+          } as any);
+        }
+
         // Update room status to occupied
         if (roomId) {
           await storage.updateRoom(roomId, { status: "occupied" });
         }
+
+        // Ensure Folio exists and record payment if deposit provided
+        let folio = await storage.getFolioByReservation(id);
+        if (!folio) {
+          const folioData = {
+            reservationId: id,
+            guestId: reservation.guestId,
+            propertyId: reservation.propertyId,
+            status: "open" as const,
+            totalCharges: reservation.totalAmount,
+            totalPayments: "0",
+            balance: reservation.totalAmount
+          };
+          folio = await storage.createFolio(folioData);
+        }
+
+        if (depositAmount && parseFloat(depositAmount) > 0) {
+          await storage.createPayment({
+            folioId: folio.id,
+            amount: depositAmount.toString(),
+            paymentMethod: paymentMethod || "credit_card",
+            status: "completed",
+            postedBy: req.user?.id
+          });
+        }
+
+        // Send welcome / check-in confirmation email (non-blocking)
+        let emailStatus: "sent" | "skipped" | "failed" = "skipped";
+        try {
+          const guest = await storage.getGuest(reservation.guestId);
+          const room = roomId ? await storage.getRoom(roomId) : null;
+          const property = await storage.getProperty(reservation.propertyId);
+          if (guest) {
+            emailStatus = await sendCheckInEmail(
+              guest,
+              reservation,
+              room?.roomNumber || roomId || "—",
+              property?.name || "Our Hotel"
+            );
+          }
+        } catch (emailErr: any) {
+          console.error("Failed to send check-in email:", emailErr);
+          emailStatus = "failed";
+          // Record the failure in guest_communications so staff have an audit trail
+          try {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Check-in confirmation – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Email delivery failed during check-in. Error: ${emailErr?.message || String(emailErr)}`,
+              staffId: req.user?.id || null
+            });
+          } catch (logErr) {
+            console.error("Failed to log email failure to guest_communications:", logErr);
+          }
+        }
         
-        res.json({ reservation });
+        res.json({ reservation: updatedReservation, emailStatus });
       } catch (error) {
         console.error("Check-in error:", error);
         res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Resend check-in confirmation email
+  app.post("/api/reservations/:id/send-checkin-email",
+    authenticate,
+    authorize("check_in.process"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+        const guest = await storage.getGuest(reservation.guestId);
+        const room = reservation.roomId ? await storage.getRoom(reservation.roomId) : null;
+        const property = await storage.getProperty(reservation.propertyId);
+        if (!guest) {
+          return res.status(404).json({ error: "Guest not found" });
+        }
+        await sendCheckInEmail(
+          guest,
+          reservation,
+          room?.roomNumber || reservation.roomId || "—",
+          property?.name || "Our Hotel"
+        );
+        res.json({ success: true, message: "Check-in email sent" });
+      } catch (error) {
+        console.error("Resend email error:", error);
+        res.status(500).json({ error: "Failed to send email" });
       }
     }
   );
@@ -1251,10 +1448,145 @@ export function registerReservationRoutes(app: Express) {
         if (reservation.roomId) {
           await storage.updateRoom(reservation.roomId, { status: "dirty" });
         }
+
+        // Send departure receipt email (non-blocking)
+        let emailStatus: "sent" | "skipped" | "failed" = "skipped";
+        try {
+          const guest = await storage.getGuest(reservation.guestId);
+          const property = await storage.getProperty(reservation.propertyId);
+          const folio = await storage.getFolioByReservation(id);
+          if (guest && folio) {
+            const charges = await storage.getChargesByFolio(folio.id);
+            const payments = await storage.getPaymentsByFolio(folio.id);
+            emailStatus = await sendCheckOutEmail(
+              guest,
+              reservation,
+              { charges, payments },
+              property?.name || "Our Hotel"
+            );
+          }
+        } catch (emailErr: any) {
+          console.error("Failed to send check-out email:", emailErr);
+          emailStatus = "failed";
+          // Record the failure in guest_communications so staff have an audit trail
+          try {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Departure receipt – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Email delivery failed during check-out. Error: ${emailErr?.message || String(emailErr)}`,
+              staffId: req.user?.id || null
+            });
+          } catch (logErr) {
+            console.error("Failed to log email failure to guest_communications:", logErr);
+          }
+        }
         
-        res.json({ reservation: updatedReservation });
+        res.json({ reservation: updatedReservation, emailStatus });
       } catch (error) {
         console.error("Check-out error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // Resend check-out receipt email
+  app.post("/api/reservations/:id/send-checkout-email",
+    authenticate,
+    authorize("check_out.process"),
+    async (req: AuthRequest, res: Response) => {
+      try {
+        const { id } = req.params;
+        const reservation = await storage.getReservation(id);
+        if (!reservation) {
+          return res.status(404).json({ error: "Reservation not found" });
+        }
+        const guest = await storage.getGuest(reservation.guestId);
+        if (!guest) {
+          return res.status(404).json({ error: "Guest not found" });
+        }
+        const property = await storage.getProperty(reservation.propertyId);
+        const folio = await storage.getFolioByReservation(id);
+        const charges = folio ? await storage.getChargesByFolio(folio.id) : [];
+        const payments = folio ? await storage.getPaymentsByFolio(folio.id) : [];
+        const emailStatus = await sendCheckOutEmail(
+          guest,
+          reservation,
+          { charges, payments },
+          property?.name || "Our Hotel"
+        );
+        if (emailStatus === "failed") {
+          // Record the resend failure so staff have an audit trail
+          try {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Departure receipt resend – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Resend of departure receipt email failed (email service returned failure).`,
+              staffId: req.user?.id || null
+            });
+          } catch (logErr) {
+            console.error("Failed to log resend failure to guest_communications:", logErr);
+          }
+          return res.status(502).json({ error: "Email service failed to deliver the message", emailStatus: "failed" });
+        }
+        res.json({ success: true, message: "Check-out receipt email sent", emailStatus });
+      } catch (error: any) {
+        console.error("Resend check-out email error:", error);
+        // Log the exception-level failure too
+        try {
+          const reservation = await storage.getReservation(req.params.id);
+          if (reservation) {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Departure receipt resend – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Resend of departure receipt email failed. Error: ${error?.message || String(error)}`,
+              staffId: req.user?.id || null
+            });
+          }
+        } catch (logErr) {
+          console.error("Failed to log resend exception to guest_communications:", logErr);
+        }
+        res.status(500).json({ error: "Failed to send email" });
+      }
+    }
+  );
+
+  // Delete reservation (test teardown only — disabled in production)
+  app.delete("/api/reservations/:id",
+    authenticate,
+    authorize("reservations.manage"),
+    async (req: AuthRequest, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      try {
+        const { id } = req.params;
+        const reservation = await storage.getReservation(id);
+        if (!reservation) return res.status(404).json({ error: "Reservation not found" });
+        if (!req.user || !canAccessProperty(req.user, reservation.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        // Guard: refuse to delete operational records unless they are explicitly
+        // tagged as E2E test fixtures in their notes field.
+        // Fixture marker convention: notes must contain "E2E_TEST_FIXTURE".
+        const isTestFixture = typeof reservation.notes === "string" &&
+          reservation.notes.includes("E2E_TEST_FIXTURE");
+        const protectedStatuses = ["checked_in", "checked_out", "no_show"] as const;
+        if (!isTestFixture && (protectedStatuses as readonly string[]).includes(reservation.status)) {
+          return res.status(409).json({
+            error: "Cannot delete reservation with operational status",
+            details: `Reservation has status '${reservation.status}' and is not marked as a test fixture. Only test-fixture reservations (notes containing 'E2E_TEST_FIXTURE') or non-operational reservations can be deleted.`
+          });
+        }
+        await storage.deleteReservation(id);
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Delete reservation error:", error);
         res.status(500).json({ error: "Internal server error" });
       }
     }
@@ -2320,8 +2652,29 @@ export function registerFolioRoutes(app: Express) {
         if (existingFolio.status === 'closed') {
           return res.status(422).json({ error: "Cannot update closed folio" });
         }
-        
-        const folio = await storage.updateFolio(id, updateData);
+
+        // Enforce zero-balance requirement when closing the folio
+        if (updateData.status === 'closed') {
+          const balance = parseFloat(existingFolio.balance.toString());
+          if (Math.abs(balance) > 0.005) {
+            return res.status(422).json({
+              error: "Cannot close folio with non-zero balance",
+              balance: balance.toFixed(2),
+            });
+          }
+        }
+
+        // Strip server-managed financial fields - they are recomputed from charges/payments
+        const sanitized: any = { ...updateData };
+        delete sanitized.totalCharges;
+        delete sanitized.totalPayments;
+        delete sanitized.balance;
+        delete sanitized.propertyId;
+        delete sanitized.guestId;
+        delete sanitized.reservationId;
+        delete sanitized.folioNumber;
+
+        const folio = await storage.updateFolio(id, sanitized);
         res.json({ folio });
       } catch (error) {
         console.error("Update folio error:", error);
@@ -2502,7 +2855,13 @@ export function registerPaymentRoutes(app: Express) {
         if (!payment) {
           return res.status(404).json({ error: "Payment not found" });
         }
-        
+
+        // Property ownership check via the parent folio
+        const folio = await storage.getFolio(payment.folioId);
+        if (!folio || folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+
         res.json({ payment });
       } catch (error) {
         console.error("Get payment error:", error);
@@ -2596,8 +2955,86 @@ export function registerPaymentRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
-        const updateData = req.body;
-        
+        const updateData: any = { ...req.body };
+
+        // Verify payment exists, then verify property ownership via the parent folio
+        const existingPayment = await storage.getPayment(id);
+        if (!existingPayment) {
+          return res.status(404).json({ error: "Payment not found" });
+        }
+        const folio = await storage.getFolio(existingPayment.folioId);
+        if (!folio || folio.propertyId !== req.user?.propertyId) {
+          return res.status(403).json({ error: "Access denied - property mismatch" });
+        }
+
+        // Reject mutations against payments on closed folios
+        if (folio.status === 'closed') {
+          return res.status(422).json({ error: "Cannot update payment on closed folio" });
+        }
+
+        // Strip server-managed / immutable fields the client must not change
+        delete updateData.folioId;
+        delete updateData.amount;
+        delete updateData.paymentMethod;
+        delete updateData.processedBy;
+        delete updateData.transactionId;
+
+        // Coerce any incoming ISO date strings into Date objects so Drizzle's timestamp mapper accepts them
+        const dateFields = ['paymentDate', 'refundedAt'];
+        for (const field of dateFields) {
+          if (updateData[field] && typeof updateData[field] === 'string') {
+            const parsed = new Date(updateData[field]);
+            if (!isNaN(parsed.getTime())) {
+              updateData[field] = parsed;
+            } else {
+              delete updateData[field];
+            }
+          }
+        }
+
+        // Validate status transitions
+        const allowedTransitions: Record<string, string[]> = {
+          pending: ['completed', 'failed'],
+          completed: ['refunded'],
+          failed: [],
+          refunded: [],
+        };
+        if (updateData.status && updateData.status !== existingPayment.status) {
+          const allowed = allowedTransitions[existingPayment.status] || [];
+          if (!allowed.includes(updateData.status)) {
+            return res.status(422).json({
+              error: `Invalid payment status transition: ${existingPayment.status} -> ${updateData.status}`,
+            });
+          }
+        }
+
+        // Refund handling
+        if (updateData.status === 'refunded') {
+          const originalAmount = parseFloat(existingPayment.amount.toString());
+          let refundAmount = updateData.refundAmount !== undefined
+            ? parseFloat(updateData.refundAmount.toString())
+            : originalAmount;
+
+          if (isNaN(refundAmount) || refundAmount <= 0) {
+            return res.status(400).json({ error: "refundAmount must be a positive number" });
+          }
+          if (refundAmount > originalAmount + 0.005) {
+            return res.status(422).json({
+              error: `Refund amount (${refundAmount.toFixed(2)}) cannot exceed original payment amount (${originalAmount.toFixed(2)})`,
+            });
+          }
+
+          updateData.refundAmount = refundAmount.toFixed(2);
+          if (!updateData.refundedAt) {
+            updateData.refundedAt = new Date();
+          }
+        } else {
+          // Don't allow setting refund fields outside of a refund transition
+          delete updateData.refundAmount;
+          delete updateData.refundReason;
+          delete updateData.refundedAt;
+        }
+
         const payment = await storage.updatePayment(id, updateData);
         res.json({ payment });
       } catch (error) {
@@ -2627,16 +3064,38 @@ export function registerBillingRoutes(app: Express) {
           return res.status(404).json({ error: "Property not found" });
         }
 
-        // TODO: Implement actual billing summary calculations
-        // For now, return mock data structure
-        const summary = {
+        // Calculate actual billing summary
+        const allFolios = await storage.getReservationsByProperty(propertyId)
+          .then(async reservations => {
+            const folios = [];
+            for (const res of reservations) {
+              const folio = await storage.getFolioByReservation(res.id);
+              if (folio) folios.push(folio);
+            }
+            return folios;
+          });
+
+        const summary = allFolios.reduce((acc, folio) => {
+          const charges = parseFloat(folio.totalCharges.toString());
+          const payments = parseFloat(folio.totalPayments.toString());
+          const balance = parseFloat(folio.balance.toString());
+          
+          acc.totalCharges += charges;
+          acc.totalPayments += payments;
+          acc.totalOutstanding += balance > 0 ? balance : 0;
+          if (folio.status === 'open') acc.openFolios++;
+          
+          return acc;
+        }, {
           totalRevenue: 0,
           totalOutstanding: 0,
           totalRefunds: 0,
           totalCharges: 0,
           totalPayments: 0,
           openFolios: 0
-        };
+        });
+
+        summary.totalRevenue = summary.totalPayments;
         
         res.json({ summary });
       } catch (error) {

@@ -532,6 +532,17 @@ class MemStorage implements IHMSStorage {
     return updated;
   }
 
+  async deleteRoom(roomId: string): Promise<boolean> {
+    this.rooms.delete(roomId);
+    return true;
+  }
+
+  async getActiveReservationsByRoom(roomId: string): Promise<Reservation[]> {
+    return Array.from(this.reservations.values()).filter(
+      (r) => r.roomId === roomId && r.status !== "cancelled"
+    );
+  }
+
   // Room Type Management
   async getRoomType(id: string): Promise<RoomType | undefined> {
     return this.roomTypes.get(id);
@@ -555,9 +566,14 @@ class MemStorage implements IHMSStorage {
   async updateRoomType(id: string, roomType: Partial<InsertRoomType>): Promise<RoomType> {
     const existing = this.roomTypes.get(id);
     if (!existing) throw new Error("Room type not found");
-    const updated = { ...existing, ...roomType, updatedAt: new Date() };
+    const updated = { ...existing, ...roomType, updatedAt: new Date() } as RoomType;
     this.roomTypes.set(id, updated);
     return updated;
+  }
+
+  async deleteRoomType(roomTypeId: string): Promise<boolean> {
+    this.roomTypes.delete(roomTypeId);
+    return true;
   }
 
   // Guest Management
@@ -592,7 +608,7 @@ class MemStorage implements IHMSStorage {
   async updateGuest(id: string, guest: Partial<InsertGuest>): Promise<Guest> {
     const existing = this.guests.get(id);
     if (!existing) throw new Error("Guest not found");
-    const updated = { ...existing, ...guest, updatedAt: new Date() };
+    const updated = { ...existing, ...guest, updatedAt: new Date() } as Guest;
     this.guests.set(id, updated);
     return updated;
   }
@@ -636,7 +652,7 @@ class MemStorage implements IHMSStorage {
     const stayHistory = await this.getGuestStayHistory(guestId);
     const totalStays = stayHistory.length;
     const totalRevenue = stayHistory.reduce((sum, r) => sum + parseFloat(r.totalAmount), 0);
-    const lastStayDate = stayHistory.length > 0 ? new Date(stayHistory[0].checkInDate) : undefined;
+    const lastStayDate = stayHistory.length > 0 ? new Date(stayHistory[0].checkInTime ?? stayHistory[0].arrivalDate) : undefined;
 
     return { guest, stayHistory, totalStays, totalRevenue, lastStayDate };
   }
@@ -708,7 +724,32 @@ class MemStorage implements IHMSStorage {
     return updated;
   }
 
-  async deleteGuest(guestId: string): Promise<void> {
+  async anonymizeGuest(guestId: string): Promise<Guest> {
+    const guest = this.guests.get(guestId);
+    if (!guest) throw new Error("Guest not found");
+    const anonymized: Guest = {
+      ...guest,
+      firstName: "ANONYMIZED",
+      lastName: "GUEST",
+      email: null,
+      phone: null,
+      address: null,
+      city: null,
+      state: null,
+      country: null,
+      postalCode: null,
+      dateOfBirth: null,
+      idType: null,
+      idNumber: null,
+      nationality: null,
+      notes: "Guest data anonymized per GDPR request",
+      updatedAt: new Date()
+    };
+    this.guests.set(guestId, anonymized);
+    return anonymized;
+  }
+
+  async deleteGuest(guestId: string): Promise<boolean> {
     // Anonymize guest for GDPR compliance instead of hard delete
     const guest = this.guests.get(guestId);
     if (!guest) throw new Error("Guest not found");
@@ -732,6 +773,7 @@ class MemStorage implements IHMSStorage {
       updatedAt: new Date()
     };
     this.guests.set(guestId, anonymized);
+    return true;
   }
 
   async exportGuestData(guestId: string): Promise<object> {
@@ -769,7 +811,7 @@ class MemStorage implements IHMSStorage {
     // Merge tags
     const primaryTags = (primary.tags as string[]) || [];
     const duplicateTags = (duplicate.tags as string[]) || [];
-    const mergedTags = [...new Set([...primaryTags, ...duplicateTags])];
+    const mergedTags = Array.from(new Set([...primaryTags, ...duplicateTags]));
     
     // Merge notes
     const mergedNotes = [primary.notes, duplicate.notes].filter(Boolean).join(" | Merged: ");
@@ -785,25 +827,25 @@ class MemStorage implements IHMSStorage {
     this.guests.set(primaryGuestId, merged);
     
     // Transfer reservations from duplicate to primary
-    for (const [id, reservation] of this.reservations) {
+    this.reservations.forEach((reservation, id) => {
       if (reservation.guestId === duplicateGuestId) {
         this.reservations.set(id, { ...reservation, guestId: primaryGuestId });
       }
-    }
+    });
     
     // Transfer folios
-    for (const [id, folio] of this.folios) {
+    this.folios.forEach((folio, id) => {
       if (folio.guestId === duplicateGuestId) {
         this.folios.set(id, { ...folio, guestId: primaryGuestId });
       }
-    }
+    });
     
     // Transfer communications
-    for (const [id, comm] of this.guestCommunications) {
+    this.guestCommunications.forEach((comm, id) => {
       if (comm.guestId === duplicateGuestId) {
         this.guestCommunications.set(id, { ...comm, guestId: primaryGuestId });
       }
-    }
+    });
     
     // Mark duplicate as merged (anonymize)
     await this.deleteGuest(duplicateGuestId);
@@ -858,6 +900,11 @@ class MemStorage implements IHMSStorage {
     const updated = { ...existing, ...ratePlan, updatedAt: new Date() };
     this.ratePlans.set(id, updated);
     return updated;
+  }
+
+  async deleteRatePlan(ratePlanId: string): Promise<boolean> {
+    this.ratePlans.delete(ratePlanId);
+    return true;
   }
 
   // Stub implementations for remaining methods (simplified for demo)
@@ -967,6 +1014,25 @@ class MemStorage implements IHMSStorage {
     return updated;
   }
 
+  async deleteReservation(reservationId: string): Promise<boolean> {
+    // Remove associated folio and its charges/payments
+    const folio = Array.from(this.folios.values()).find(
+      (f) => f.reservationId === reservationId
+    );
+    if (folio) {
+      const folioId = folio.id;
+      this.charges.forEach((_c, cid) => {
+        if (_c.folioId === folioId) this.charges.delete(cid);
+      });
+      this.payments.forEach((_p, pid) => {
+        if (_p.folioId === folioId) this.payments.delete(pid);
+      });
+      this.folios.delete(folioId);
+    }
+    this.reservations.delete(reservationId);
+    return true;
+  }
+
   // Folio Management
   async getFolio(id: string): Promise<Folio | undefined> {
     return this.folios.get(id);
@@ -1016,42 +1082,54 @@ class MemStorage implements IHMSStorage {
     return Array.from(this.charges.values()).filter(c => c.folioId === folioId);
   }
   async getChargesByProperty(propertyId: string): Promise<Charge[]> {
-    return Array.from(this.charges.values()).filter(c => c.propertyId === propertyId);
+    // Charge has no propertyId; return all charges for this in-memory implementation
+    return Array.from(this.charges.values());
   }
   async getChargesByDateRange(propertyId: string, fromDate: Date, toDate: Date): Promise<Charge[]> {
-    return Array.from(this.charges.values()).filter(c => 
-      c.propertyId === propertyId &&
+    // Charge has no propertyId; filter by date range only
+    return Array.from(this.charges.values()).filter(c =>
       new Date(c.chargeDate) >= fromDate &&
       new Date(c.chargeDate) <= toDate
     );
   }
   async getRevenueCharges(propertyId: string, fromDate: Date, toDate: Date): Promise<Charge[]> {
     return (await this.getChargesByDateRange(propertyId, fromDate, toDate))
-      .filter(c => !c.isVoid && (c.chargeType === 'room_charge' || c.chargeType === 'service_charge'));
+      .filter(c => !c.isVoided);
   }
   async getExpenseCharges(propertyId: string, fromDate: Date, toDate: Date): Promise<Charge[]> {
     return (await this.getChargesByDateRange(propertyId, fromDate, toDate))
-      .filter(c => !c.isVoid && (c.chargeType === 'expense' || c.chargeType === 'refund'));
+      .filter(c => !c.isVoided);
   }
   async createCharge(charge: InsertCharge): Promise<Charge> {
     const newCharge: Charge = {
       id: generateId(),
+      chargeDate: new Date(),
+      postingDate: new Date(),
+      isVoided: false,
+      voidReason: null,
+      voidedBy: null,
+      voidedAt: null,
       ...charge,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    } as Charge;
+      taxAmount: charge.taxAmount ?? '0',
+      postedBy: charge.postedBy ?? null,
+      createdAt: new Date()
+    };
     this.charges.set(newCharge.id, newCharge);
     return newCharge;
   }
   async updateCharge(id: string, charge: Partial<InsertCharge>): Promise<Charge> {
     const existing = this.charges.get(id);
     if (!existing) throw new Error("Charge not found");
-    const updated = { ...existing, ...charge, updatedAt: new Date() };
+    const updated = { ...existing, ...charge };
     this.charges.set(id, updated);
     return updated;
   }
   async voidCharge(id: string, voidReason: string, voidedBy: string): Promise<Charge> {
-    return this.updateCharge(id, { isVoid: true, voidReason, voidedBy, voidedAt: new Date() });
+    const existing = this.charges.get(id);
+    if (!existing) throw new Error("Charge not found");
+    const updated = { ...existing, isVoided: true, voidReason, voidedBy, voidedAt: new Date() };
+    this.charges.set(id, updated);
+    return updated;
   }
 
   // Payment Management
@@ -1062,11 +1140,12 @@ class MemStorage implements IHMSStorage {
     return Array.from(this.payments.values()).filter(p => p.folioId === folioId);
   }
   async getPaymentsByProperty(propertyId: string): Promise<Payment[]> {
-    return Array.from(this.payments.values()).filter(p => p.propertyId === propertyId);
+    // Payment has no propertyId; return all payments for this in-memory implementation
+    return Array.from(this.payments.values());
   }
   async getPaymentsByDateRange(propertyId: string, fromDate: Date, toDate: Date): Promise<Payment[]> {
+    // Payment has no propertyId; filter by date range only
     return Array.from(this.payments.values()).filter(p =>
-      p.propertyId === propertyId &&
       new Date(p.paymentDate) >= fromDate &&
       new Date(p.paymentDate) <= toDate
     );
@@ -1074,10 +1153,17 @@ class MemStorage implements IHMSStorage {
   async createPayment(payment: InsertPayment): Promise<Payment> {
     const newPayment: Payment = {
       id: generateId(),
+      paymentDate: new Date(),
+      refundAmount: null,
+      refundReason: null,
+      refundedAt: null,
       ...payment,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    } as Payment;
+      status: payment.status ?? 'pending',
+      notes: payment.notes ?? null,
+      postedBy: payment.postedBy ?? null,
+      transactionId: payment.transactionId ?? null,
+      createdAt: new Date()
+    };
     this.payments.set(newPayment.id, newPayment);
     return newPayment;
   }
@@ -1120,7 +1206,10 @@ class MemStorage implements IHMSStorage {
   async getHousekeepingTask(id: string): Promise<HousekeepingTask | undefined> {
     return this.housekeepingTasks.get(id);
   }
-  async getHousekeepingTasksByProperty(): Promise<HousekeepingTask[]> { return []; }
+  async getHousekeepingTasksByProperty(propertyId?: string): Promise<HousekeepingTask[]> { return []; }
+  async getHousekeepingTasksByAssignee(assignedTo: string): Promise<HousekeepingTask[]> {
+    return Array.from(this.housekeepingTasks.values()).filter(t => t.assignedTo === assignedTo);
+  }
   async getHousekeepingTasksByRoom(): Promise<HousekeepingTask[]> { return []; }
   async getHousekeepingTasksByDate(): Promise<HousekeepingTask[]> { return []; }
   async createHousekeepingTask(task: InsertHousekeepingTask): Promise<HousekeepingTask> {
@@ -1144,6 +1233,28 @@ class MemStorage implements IHMSStorage {
   // Daily Metrics
   async getDailyMetric(): Promise<DailyMetric | undefined> { return undefined; }
   async getDailyMetricsByDateRange(): Promise<DailyMetric[]> { return []; }
+  async getDailyMetrics(propertyId: string, fromDate: Date, toDate: Date): Promise<DailyMetric[]> { return []; }
+  async createOrUpdateDailyMetric(metric: InsertDailyMetric): Promise<DailyMetric> { return this.createDailyMetric(metric); }
+  async calculateDailyMetrics(propertyId: string, date: Date): Promise<DailyMetric> {
+    return this.createDailyMetric({
+      propertyId,
+      metricDate: date,
+      totalRooms: this.rooms.size,
+      occupiedRooms: 0,
+      availableRooms: this.rooms.size,
+      outOfOrderRooms: 0,
+      occupancyRate: '0',
+      adr: '0',
+      revpar: '0',
+      totalRevenue: '0',
+      roomRevenue: '0',
+      totalGuests: 0,
+      walkIns: 0,
+      noShows: 0,
+      cancellations: 0,
+      avgLengthOfStay: '0'
+    });
+  }
   async createDailyMetric(metric: InsertDailyMetric): Promise<DailyMetric> {
     const newMetric: DailyMetric = {
       id: generateId(),
@@ -1166,15 +1277,29 @@ class MemStorage implements IHMSStorage {
   async getGuestSatisfaction(id: string): Promise<GuestSatisfaction | undefined> {
     return this.guestSatisfaction.get(id);
   }
-  async getGuestSatisfactionByReservation(): Promise<GuestSatisfaction | undefined> { return undefined; }
+  async getGuestSatisfactionByReservation(reservationId: string): Promise<GuestSatisfaction | undefined> { return undefined; }
   async getGuestSatisfactionsByProperty(): Promise<GuestSatisfaction[]> { return []; }
+  async getGuestSatisfactionByProperty(propertyId: string, fromDate?: Date, toDate?: Date): Promise<GuestSatisfaction[]> { return []; }
+  async getAverageRatings(propertyId: string, fromDate?: Date, toDate?: Date): Promise<{
+    overallRating: number; roomRating: number; serviceRating: number; cleanlinessRating: number;
+    valueRating: number; locationRating: number; recommendationRate: number; totalResponses: number;
+  }> {
+    return { overallRating: 0, roomRating: 0, serviceRating: 0, cleanlinessRating: 0, valueRating: 0, locationRating: 0, recommendationRate: 0, totalResponses: 0 };
+  }
   async createGuestSatisfaction(satisfaction: InsertGuestSatisfaction): Promise<GuestSatisfaction> {
     const newSatisfaction: GuestSatisfaction = {
       id: generateId(),
+      surveyDate: new Date(),
+      roomRating: null,
+      serviceRating: null,
+      cleanlinessRating: null,
+      valueRating: null,
+      locationRating: null,
+      recommendToFriend: null,
+      comments: null,
       ...satisfaction,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    } as GuestSatisfaction;
+      createdAt: new Date()
+    };
     this.guestSatisfaction.set(newSatisfaction.id, newSatisfaction);
     return newSatisfaction;
   }
@@ -1191,6 +1316,11 @@ class MemStorage implements IHMSStorage {
     return this.reportDefinitions.get(id);
   }
   async getReportDefinitionsByProperty(): Promise<ReportDefinition[]> { return []; }
+  async getReportDefinitions(propertyId: string, type?: string): Promise<ReportDefinition[]> { return []; }
+  async deleteReportDefinition(id: string, propertyId?: string): Promise<boolean> {
+    this.reportDefinitions.delete(id);
+    return true;
+  }
   async createReportDefinition(definition: InsertReportDefinition): Promise<ReportDefinition> {
     const newDefinition: ReportDefinition = {
       id: generateId(),
@@ -1214,6 +1344,7 @@ class MemStorage implements IHMSStorage {
     return this.analyticsEvents.get(id);
   }
   async getAnalyticsEventsByProperty(): Promise<AnalyticsEvent[]> { return []; }
+  async getAnalyticsEvents(propertyId: string, fromDate?: Date, toDate?: Date, eventCategory?: string): Promise<AnalyticsEvent[]> { return []; }
   async getAnalyticsEventsByType(): Promise<AnalyticsEvent[]> { return []; }
   async getAnalyticsEventsByDateRange(): Promise<AnalyticsEvent[]> { return []; }
   async createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent> {
@@ -1229,7 +1360,24 @@ class MemStorage implements IHMSStorage {
   // Additional required methods
   async checkIn(): Promise<any> { return { success: true }; }
   async checkOut(): Promise<any> { return { success: true }; }
-  async getOccupancyReport(): Promise<any> { return []; }
+  async getOccupancyReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    date: Date; occupancyRate: number; totalRooms: number; occupiedRooms: number;
+    adr: number; revpar: number; totalRevenue: number;
+  }[]> { return []; }
+  async getHousekeepingReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalTasks: number; completedTasks: number; avgCompletionTime: number;
+    tasksByStatus: Record<string, number>; tasksByType: Record<string, number>;
+    staffPerformance: { staffId: string; staffName: string; tasksCompleted: number; avgCompletionTime: number; }[];
+  }> {
+    return { totalTasks: 0, completedTasks: 0, avgCompletionTime: 0, tasksByStatus: {}, tasksByType: {}, staffPerformance: [] };
+  }
+  async getGuestAnalytics(propertyId: string, fromDate: Date, toDate: Date): Promise<{
+    totalGuests: number; newGuests: number; returningGuests: number; vipGuests: number;
+    avgLengthOfStay: number; topSourceMarkets: { source: string; count: number }[];
+    guestSatisfactionSummary: { avgOverallRating: number; totalSurveys: number; recommendationRate: number; };
+  }> {
+    return { totalGuests: 0, newGuests: 0, returningGuests: 0, vipGuests: 0, avgLengthOfStay: 0, topSourceMarkets: [], guestSatisfactionSummary: { avgOverallRating: 0, totalSurveys: 0, recommendationRate: 0 } };
+  }
   
   async getRevenueReport(propertyId: string, fromDate: Date, toDate: Date): Promise<{
     totalRevenue: number;
@@ -1237,13 +1385,17 @@ class MemStorage implements IHMSStorage {
     otherRevenue: number;
     avgDailyRate: number;
     revpar: number;
+    totalNights: number;
+    totalGuests: number;
   }> {
     return {
       totalRevenue: 0,
       roomRevenue: 0,
       otherRevenue: 0,
       avgDailyRate: 0,
-      revpar: 0
+      revpar: 0,
+      totalNights: 0,
+      totalGuests: 0
     };
   }
 

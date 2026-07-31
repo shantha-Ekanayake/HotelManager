@@ -7,6 +7,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import DashboardHeader from "@/components/DashboardHeader";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { CurrencyProvider } from "@/context/CurrencyContext";
 import { useAuth } from "@/hooks/useAuth";
 import Dashboard from "@/pages/Dashboard";
 import FrontDesk from "@/pages/FrontDesk";
@@ -75,7 +76,6 @@ function AuthenticatedApp() {
             userName={userName}
             userRole={userRole}
             notifications={3}
-            onLogout={logout}
           />
           <main className="flex-1 overflow-auto">
             <div className="container mx-auto p-6">
@@ -92,10 +92,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <TooltipProvider>
-          <AuthenticatedApp />
-          <Toaster />
-        </TooltipProvider>
+        <CurrencyProvider>
+          <TooltipProvider>
+            <AuthenticatedApp />
+            <Toaster />
+          </TooltipProvider>
+        </CurrencyProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
