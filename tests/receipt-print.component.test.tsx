@@ -213,6 +213,32 @@ describe("printReceipt() – HTML content", () => {
     expect(capturedHtml).toContain("Balance Due");
   });
 
+  it("prints the correct outstanding amount when the guest has a partial payment", () => {
+    // charges: 660, payments: 610 → balance: 50
+    printReceipt({ ...SAMPLE_RECEIPT_DATA, balance: 50, totalPayments: 610 });
+    expect(capturedHtml).toContain("Rs 50.00");
+  });
+
+  it("does NOT show 'Balance Due' (only 'Balance') when the folio is fully paid", () => {
+    // SAMPLE_RECEIPT_DATA has balance: 0 – the label must be plain "Balance"
+    printReceipt(SAMPLE_RECEIPT_DATA);
+    // The HTML must not contain the string "Balance Due"
+    expect(capturedHtml).not.toContain("Balance Due");
+  });
+
+  it("applies the red balance-due class on the totals row for a partial payment", () => {
+    // charges: 660, payments: 610 → balance: 50 → class="balance-due"
+    printReceipt({ ...SAMPLE_RECEIPT_DATA, balance: 50, totalPayments: 610 });
+    expect(capturedHtml).toContain('class="balance-due"');
+  });
+
+  it("applies the balance-clear class (not balance-due) when the folio is fully settled", () => {
+    // balance: 0 → class="balance-clear"
+    printReceipt(SAMPLE_RECEIPT_DATA);
+    expect(capturedHtml).toContain('class="balance-clear"');
+    expect(capturedHtml).not.toContain('class="balance-due"');
+  });
+
   it("includes the property name in the header", () => {
     printReceipt(SAMPLE_RECEIPT_DATA);
     expect(capturedHtml).toContain("Grand Hotel");
