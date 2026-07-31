@@ -28,10 +28,11 @@ export const USER_ROLES = {
     level: 9,
     description: "Administrative access to most modules and settings",
     permissions: [
-      "users.manage", "properties.manage", "reports.view.all", "reports.view",
+      "users.manage", "properties.manage", "reports.view.all", "reports.view", "reports.view.financial",
       "reservations.manage", "guests.manage", "rooms.view", "rooms.manage",
-      "billing.manage", "housekeeping.manage", "maintenance.manage", "rates.manage",
-      "front_desk.manage", "front_desk.view", "rooms.status.update", "service_requests.view", "service_requests.manage"
+      "billing.manage", "housekeeping.manage", "housekeeping.tasks.view", "housekeeping.tasks.update", "maintenance.manage", "rates.manage",
+      "front_desk.manage", "front_desk.view", "rooms.status.update", "service_requests.view", "service_requests.manage",
+      "check_in.process", "check_out.process", "folios.manage", "payments.process"
     ]
   },
   operations_manager: {
@@ -46,9 +47,10 @@ export const USER_ROLES = {
     level: 7,
     description: "Full property management for assigned property",
     permissions: [
-      "reservations.manage", "guests.manage", "rooms.view", "rooms.manage", "properties.view", "billing.view",
-      "housekeeping.manage", "maintenance.manage", "reports.view.property",
-      "reports.view.financial", "rates.view", "users.view.property", "front_desk.manage", "front_desk.view"
+      "reservations.manage", "guests.manage", "rooms.view", "rooms.manage", "properties.view", "billing.view", "billing.manage",
+      "housekeeping.manage", "housekeeping.tasks.view", "housekeeping.tasks.update", "maintenance.manage", "reports.view.property",
+      "reports.view.financial", "reports.view", "rates.view", "users.view.property", "front_desk.manage", "front_desk.view",
+      "check_in.process", "check_out.process", "folios.manage", "payments.process"
     ]
   },
   revenue_manager: {
@@ -94,7 +96,8 @@ export const USER_ROLES = {
       "reservations.manage", "guests.manage", "folios.manage",
       "payments.process", "check_in.process", "check_out.process",
       "service_requests.create", "rooms.view", "rooms.status.update",
-      "front_desk.view"
+      "front_desk.view", "front_desk.manage", "rooms.manage",
+      "billing.view", "billing.manage"
     ]
   },
   maintenance_staff: {

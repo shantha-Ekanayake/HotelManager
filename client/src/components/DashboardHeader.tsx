@@ -1,8 +1,10 @@
-import { Bell, Menu, User, Moon, Sun } from "lucide-react";
+import { Bell, Menu, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTheme } from "../hooks/use-theme";
+import { useCurrency, type Currency } from "@/context/CurrencyContext";
 
 interface DashboardHeaderProps {
   onMenuClick?: () => void;
@@ -18,6 +20,7 @@ export default function DashboardHeader({
   notifications = 3 
 }: DashboardHeaderProps) {
   const { theme, toggleTheme } = useTheme();
+  const { targetCurrency, setTargetCurrency } = useCurrency();
 
   return (
     <header className="flex items-center justify-between p-4 border-b bg-background">
@@ -37,7 +40,23 @@ export default function DashboardHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        <Select
+          value={targetCurrency}
+          onValueChange={(v) => setTargetCurrency(v as Currency)}
+          data-testid="select-currency-global"
+        >
+          <SelectTrigger className="w-[90px]" data-testid="select-trigger-currency">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="LKR">LKR (Rs.)</SelectItem>
+            <SelectItem value="USD">USD ($)</SelectItem>
+            <SelectItem value="EUR">EUR (€)</SelectItem>
+            <SelectItem value="GBP">GBP (£)</SelectItem>
+          </SelectContent>
+        </Select>
+
         <Button
           variant="ghost"
           size="icon"

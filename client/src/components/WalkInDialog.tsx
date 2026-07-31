@@ -53,10 +53,8 @@ export default function WalkInDialog({ onComplete }: WalkInDialogProps) {
 
   const walkInMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest("/api/front-desk/walk-in", {
-        method: "POST",
-        body: JSON.stringify(data)
-      });
+      const res = await apiRequest("POST", "/api/front-desk/walk-in", data);
+      return await res.json();
     },
     onSuccess: (data: any) => {
       toast({

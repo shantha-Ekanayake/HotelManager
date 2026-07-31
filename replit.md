@@ -53,6 +53,47 @@ The application is organized into core hotel management modules:
 - **Billing**: Payment processing and invoice management
 - **Reports**: Analytics and business intelligence
 
+## Recent Changes (April 2026 — Bug Fixes)
+
+### Global Currency Selector, Front Desk Details Button, Room Number Display (April 26, 2026)
+- **Global Currency Context (`client/src/context/CurrencyContext.tsx`)**: New React context providing `targetCurrency`, `setTargetCurrency`, `convertAmount`, `formatWithCurrency`, `EXCHANGE_RATES`. Persists selection in localStorage.
+- **App.tsx**: Wrapped app with `<CurrencyProvider>` so currency state is global.
+- **DashboardHeader.tsx**: Currency `<Select>` (LKR/USD/EUR/GBP) moved to the header — a single global control.
+- **All pages updated** to use `useCurrency()` hook instead of local per-page currency state:
+  - `Dashboard.tsx`, `Billing.tsx`, `FinancialReports.tsx`, `Rooms.tsx`: removed local `targetCurrency` state, `exchangeRates`, `convertAmount`, `formatWithCurrency`, `handleCurrencyChange` — replaced with `useCurrency()` hook. Removed per-page currency `<Select>` dropdowns.
+  - `ReservationCard.tsx` component: replaced hardcoded `"Rs."` formatter with `useCurrency()` hook.
+- **Front Desk Details button (`client/src/pages/FrontDesk.tsx`)**:
+  - Added `useLocation` and `useAuth` imports.
+  - Added rooms query (`/api/properties/${propertyId}/rooms`) and guests query (`/api/guests`).
+  - Built `roomMap` (UUID→roomNumber) and `guestMap` (UUID→full name).
+  - Current Guests section now shows guest name (from guestMap) and readable room number (from roomMap).
+  - Added **Details** button (`data-testid="button-details-{id}"`) that navigates to `/guests`.
+  - Checkout tab room display also uses roomMap.
+- **Reservations.tsx**: Added rooms query and `roomMap`; `roomNumber` prop now shows the real room number (e.g. "101") instead of the UUID. `onViewDetails` navigates to `/guests` instead of `console.log`.
+- **E2E verified**: Currency global sync (LKR→USD), room numbers show as "101"/"102"/"TBA" (not UUIDs), Details button navigates correctly.
+
+## Recent Changes (April 2026 — Billing)
+
+### Billing Module Hardening (April 26, 2026)
+- **Frontend (`client/src/pages/Billing.tsx`)**: Full feature rewrite
+  - Configurable tax rate + discount + auto-computed read-only Total in charge form
+  - Void charge dialog (with reason) — voided charges remain visible with "Voided" badge
+  - Mark-pending-payment-completed action
+  - Refund completed payment dialog (refundAmount + reason)
+  - Inline folio notes editor (Edit / Save / Cancel)
+  - Close Folio button (UI-disabled when balance != 0)
+  - Print Invoice (full folio HTML) and Print Receipt (per-payment HTML), both auto-trigger window.print()
+- **Backend ledger correctness (`server/database-storage.ts`)**:
+  - New private `recomputeFolioTotals(folioId)` helper called after every charge/payment mutation.
+  - Folio `totalCharges` = sum of non-voided charges; `totalPayments` = sum of completed payments minus refundAmount; `balance` = totalCharges − totalPayments. Pending/failed payments contribute 0.
+  - `getChargesByFolio` now returns ALL charges (incl. voided) so the UI can show them with a Voided badge — recompute filters voided charges in JS.
+- **Backend security & validation (`server/hms-routes.ts`)**:
+  - GET /api/payments/:id and PUT /api/payments/:id verify property ownership via parent folio (closes IDOR).
+  - PUT /api/payments/:id strips immutable fields (folioId/amount/paymentMethod/processedBy/transactionId), validates state transitions (pending→completed/failed, completed→refunded), validates `refundAmount <= original`, auto-sets `refundedAt`, coerces ISO date strings to Date.
+  - PUT /api/folios/:id strips server-managed financial fields and rejects `status='closed'` when balance ≠ 0 (HTTP 422).
+- **Permissions (`server/auth.ts`)**: `billing.manage` granted to `hotel_manager` and `front_desk_staff` (FD also has `billing.view`).
+- **E2E verified**: All flows including the over-limit refund rejection (HTTP 422) confirmed via Playwright.
+
 ## Recent Changes (December 2025)
 
 ### Offline Feature Removed - System Now Online-Only

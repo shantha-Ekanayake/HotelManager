@@ -8,20 +8,39 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Calendar, Clock, User, CreditCard, KeyRound, Phone, Mail, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Calendar, Clock, User, CreditCard, KeyRound, Phone, Mail, Loader2, ShieldCheck, PenLine, CheckCircle2, Printer, Send, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Reservation, Guest, Room } from "@shared/schema";
+import type { Reservation, Guest, Room, Property } from "@shared/schema";
+import SignaturePad from "./SignaturePad";
+import { printRegistrationCard } from "./RegistrationCardPrint";
 
 interface CheckInFormProps {
   reservationId?: string;
   onCheckInComplete?: (data: any) => void;
 }
 
+const ID_TYPES = [
+  { value: "passport", label: "Passport" },
+  { value: "national_id", label: "National ID" },
+  { value: "drivers_license", label: "Driver's License" },
+  { value: "other", label: "Other" }
+];
+
 export default function CheckInForm({ reservationId, onCheckInComplete }: CheckInFormProps) {
   const { toast } = useToast();
   const [selectedRoomId, setSelectedRoomId] = useState<string>("");
-  
+  const [signature, setSignature] = useState<string | null>(null);
+  const [checkInResult, setCheckInResult] = useState<any>(null);
+  const [resendLoading, setResendLoading] = useState(false);
+
+  const [idVerification, setIdVerification] = useState({
+    idType: "",
+    idNumber: "",
+    nationality: ""
+  });
+
   const [checkInDetails, setCheckInDetails] = useState({
     numberOfGuests: "1",
     keyCards: "2",
@@ -46,19 +65,50 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
     queryKey: ["/api/front-desk/available-rooms"]
   });
 
+  const { data: propertiesData } = useQuery<{ properties: Property[] }>({
+    queryKey: ["/api/properties"]
+  });
+
+  // Pre-populate ID fields from guest record when guest loads
+  useEffect(() => {
+    const g = guestData?.guest;
+    if (g) {
+      setIdVerification({
+        idType: g.idType || "",
+        idNumber: g.idNumber || "",
+        nationality: g.nationality || ""
+      });
+    }
+  }, [guestData]);
+
   const checkInMutation = useMutation({
-    mutationFn: async (data: { roomId: string }) => {
-      return await apiRequest("POST", `/api/reservations/${reservationId}/check-in`, data);
+    mutationFn: async (data: {
+      roomId: string;
+      depositAmount: string;
+      paymentMethod: string;
+      idType?: string;
+      idNumber?: string;
+      nationality?: string;
+      signature?: string | null;
+    }) => {
+      const response = await apiRequest("POST", `/api/reservations/${reservationId}/check-in`, data);
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setCheckInResult(data);
       toast({
         title: "Check-in Successful",
-        description: `Guest has been checked into room successfully`,
+        description: `Guest has been checked in successfully`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/arrivals-today"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/front-desk/current-guests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/overview"] });
-      onCheckInComplete?.(reservation);
+      queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
+      // Do NOT call onCheckInComplete here — the post-check-in panel must stay
+      // mounted so staff can print the registration card and resend the email.
+      // onCheckInComplete is called when the user explicitly clicks "Done".
     },
     onError: (error: any) => {
       toast({
@@ -80,7 +130,67 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
       return;
     }
     
-    checkInMutation.mutate({ roomId: selectedRoomId });
+    checkInMutation.mutate({ 
+      roomId: selectedRoomId,
+      depositAmount: checkInDetails.depositAmount,
+      paymentMethod: checkInDetails.paymentMethod,
+      idType: idVerification.idType || undefined,
+      idNumber: idVerification.idNumber || undefined,
+      nationality: idVerification.nationality || undefined,
+      signature: signature
+    });
+  };
+
+  const handlePrintCard = () => {
+    const res = reservation?.reservation;
+    const g = guestData?.guest;
+    const room = availableRoomsData?.rooms.find(r => r.id === selectedRoomId);
+    const property = propertiesData?.properties?.[0];
+    const propertyAddressParts = property
+      ? [property.address, property.city, property.state, property.country, property.postalCode].filter(Boolean)
+      : [];
+    const propertyAddress = propertyAddressParts.length > 0 ? propertyAddressParts.join(", ") : undefined;
+
+    printRegistrationCard({
+      guestName: g ? `${g.firstName} ${g.lastName}` : "Guest",
+      guestEmail: g?.email,
+      guestPhone: g?.phone,
+      idType: idVerification.idType || g?.idType,
+      idNumber: idVerification.idNumber || g?.idNumber,
+      nationality: idVerification.nationality || g?.nationality,
+      roomNumber: room?.roomNumber || selectedRoomId,
+      confirmationNumber: res?.confirmationNumber || "—",
+      checkInDate: res?.arrivalDate ? new Date(res.arrivalDate).toLocaleDateString() : "—",
+      checkOutDate: res?.departureDate ? new Date(res.departureDate).toLocaleDateString() : "—",
+      nights: res?.nights || 0,
+      rateAmount: res?.totalAmount || "0",
+      depositAmount: checkInDetails.depositAmount,
+      depositPaid: !!checkInDetails.depositAmount && parseFloat(checkInDetails.depositAmount) > 0,
+      signature: signature,
+      propertyName: property?.name || "Hotel Management System",
+      propertyAddress,
+      propertyPhone: property?.phone ?? undefined,
+    });
+  };
+
+  const handleResendEmail = async () => {
+    if (!reservationId) return;
+    setResendLoading(true);
+    try {
+      await apiRequest("POST", `/api/reservations/${reservationId}/send-checkin-email`, {});
+      toast({
+        title: "Email Sent",
+        description: "Check-in confirmation email has been resent to the guest.",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Email Failed",
+        description: error.message || "Failed to send email.",
+      });
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   const guest = guestData?.guest;
@@ -119,6 +229,78 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
       <div className="text-center py-8">
         <p className="text-destructive">Guest information not found</p>
         <p className="text-sm text-muted-foreground mt-2">Unable to load guest details for this reservation</p>
+      </div>
+    );
+  }
+
+  // Post-check-in success panel
+  if (checkInResult) {
+    const emailStatus: "sent" | "skipped" | "failed" | undefined = checkInResult.emailStatus;
+    return (
+      <div className="space-y-6">
+        <Alert className="border-green-200 bg-green-50">
+          <CheckCircle2 className="h-5 w-5 text-green-600" />
+          <AlertTitle className="text-green-800">Check-In Complete</AlertTitle>
+          <AlertDescription className="text-green-700">
+            {guest.firstName} {guest.lastName} has been successfully checked in.
+            {emailStatus === "sent"
+              ? " A welcome email has been sent to the guest."
+              : emailStatus === "failed"
+              ? " The welcome email could not be sent — see the warning below."
+              : guest.email
+              ? " No email confirmation was sent (SMTP not configured)."
+              : " No email address on file."}
+          </AlertDescription>
+        </Alert>
+
+        {emailStatus === "failed" && (
+          <Alert className="border-yellow-300 bg-yellow-50" data-testid="alert-email-failed">
+            <AlertTriangle className="h-5 w-5 text-yellow-600" />
+            <AlertTitle className="text-yellow-800">Welcome Email Failed</AlertTitle>
+            <AlertDescription className="text-yellow-700">
+              The check-in confirmation email could not be delivered. The failure has been recorded in the guest communication log. Use the <strong>Resend Welcome Email</strong> button below once the issue is resolved, or contact the guest directly.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Post Check-In Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePrintCard}
+              data-testid="button-print-registration-card"
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              Print Registration Card
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleResendEmail}
+              disabled={resendLoading}
+              data-testid="button-resend-email"
+            >
+              {resendLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4 mr-2" />
+              )}
+              Resend Welcome Email
+            </Button>
+            <div className="flex-1" />
+            <Button
+              type="button"
+              onClick={() => onCheckInComplete?.(checkInResult)}
+              data-testid="button-done-checkin"
+            >
+              Done
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -188,6 +370,71 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
               data-testid="input-address"
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ID Verification */}
+      <Card data-testid="card-id-verification">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5" />
+            ID Verification
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="idType">ID Type</Label>
+              <Select
+                value={idVerification.idType}
+                onValueChange={(value) => setIdVerification({ ...idVerification, idType: value })}
+              >
+                <SelectTrigger data-testid="select-id-type">
+                  <SelectValue placeholder="Select ID type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ID_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="idNumber">ID Number</Label>
+              <Input
+                id="idNumber"
+                value={idVerification.idNumber}
+                onChange={(e) => setIdVerification({ ...idVerification, idNumber: e.target.value })}
+                placeholder="Enter ID number"
+                data-testid="input-id-number"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nationality">Nationality</Label>
+              <Input
+                id="nationality"
+                value={idVerification.nationality}
+                onChange={(e) => setIdVerification({ ...idVerification, nationality: e.target.value })}
+                placeholder="e.g. Pakistani"
+                data-testid="input-nationality"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Guest Signature */}
+      <Card data-testid="card-signature">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PenLine className="h-5 w-5" />
+            Guest Signature
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SignaturePad onChange={setSignature} />
         </CardContent>
       </Card>
 
@@ -271,7 +518,7 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="depositAmount">Deposit Amount ($)</Label>
+              <Label htmlFor="depositAmount">Deposit Amount (Rs)</Label>
               <Input
                 id="depositAmount"
                 type="number"
@@ -309,6 +556,8 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
           variant="outline"
           onClick={() => {
             setSelectedRoomId("");
+            setSignature(null);
+            setIdVerification({ idType: "", idNumber: "", nationality: "" });
             setCheckInDetails({
               numberOfGuests: "1",
               keyCards: "2",

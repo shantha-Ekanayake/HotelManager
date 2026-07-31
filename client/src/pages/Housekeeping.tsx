@@ -34,12 +34,10 @@ import { useToast } from "@/hooks/use-toast";
 
 interface Room {
   id: string;
-  number: string;
-  floor: number;
+  roomNumber: string;
+  floor: number | null;
   status: 'available' | 'occupied' | 'dirty' | 'clean' | 'inspected' | 'out_of_order' | 'maintenance';
-  roomType: {
-    name: string;
-  };
+  roomTypeId: string;
 }
 
 interface HousekeepingTask {
@@ -66,6 +64,7 @@ interface HousekeepingTask {
 const taskFormSchema = insertHousekeepingTaskSchema.extend({
   roomId: z.string().min(1, "Room is required"),
   taskType: z.string().min(1, "Task type is required"),
+  estimatedDuration: z.coerce.number().int().positive().optional().nullable(),
 });
 
 export default function Housekeeping() {
@@ -141,14 +140,12 @@ export default function Housekeeping() {
     },
   });
 
-  // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: z.infer<typeof taskFormSchema>) => {
-      const response = await apiRequest("POST", "/api/housekeeping-tasks", {
+      await apiRequest("POST", "/api/housekeeping-tasks", {
         ...data,
         propertyId,
       });
-      return response.json();
     },
     onSuccess: () => {
       toast({ title: "Task created successfully" });
@@ -187,7 +184,13 @@ export default function Housekeeping() {
   });
 
   const handleCreateTask = (data: z.infer<typeof taskFormSchema>) => {
-    createTaskMutation.mutate(data);
+    const cleanedData = {
+      ...data,
+      estimatedDuration: data.estimatedDuration ? Number(data.estimatedDuration) : null,
+      assignedTo: data.assignedTo || null,
+      notes: data.notes || null,
+    };
+    createTaskMutation.mutate(cleanedData as any);
   };
 
   const handleStartTask = (taskId: string) => {
@@ -390,7 +393,7 @@ export default function Housekeeping() {
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-2">
                             <Bed className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">Room {task.room?.number || task.roomId}</span>
+                            <span className="font-medium">Room {task.room?.roomNumber || task.roomId}</span>
                           </div>
                           <span className="text-sm text-muted-foreground">({task.taskType})</span>
                           {getStatusBadge(task.status)}
@@ -496,7 +499,7 @@ export default function Housekeeping() {
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-2">
                             <Bed className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">Room {task.room?.number || task.roomId}</span>
+                            <span className="font-medium">Room {task.room?.roomNumber || task.roomId}</span>
                           </div>
                           <span className="text-sm text-muted-foreground">({task.taskType})</span>
                           {getStatusBadge(task.status)}
@@ -578,7 +581,7 @@ export default function Housekeeping() {
                           <SelectContent>
                             {(roomsData?.rooms || []).map((room: Room) => (
                               <SelectItem key={room.id} value={room.id}>
-                                Room {room.number} ({room.roomType.name})
+                                Room {room.roomNumber}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -737,7 +740,7 @@ export default function Housekeeping() {
           </DialogHeader>
           <div className="space-y-4">
             <p>
-              Inspecting task for <strong>Room {selectedTask?.room?.number || selectedTask?.roomId}</strong>
+              Inspecting task for <strong>Room {selectedTask?.room?.roomNumber || selectedTask?.roomId}</strong>
             </p>
             <Textarea 
               placeholder="Inspection notes and feedback..."

@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Calendar, Clock, Phone, Mail, CreditCard } from "lucide-react";
+import { useCurrency } from "@/context/CurrencyContext";
 
 export type ReservationStatus = "confirmed" | "pending" | "checked-in" | "checked-out" | "cancelled";
 
@@ -48,6 +49,7 @@ export default function ReservationCard({
   onViewDetails
 }: ReservationCardProps) {
   const statusInfo = statusConfig[status];
+  const { formatWithCurrency } = useCurrency();
 
   return (
     <Card className="hover-elevate" data-testid={`card-reservation-${id}`}>
@@ -94,7 +96,7 @@ export default function ReservationCard({
             <div className="flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-semibold" data-testid={`text-total-amount-${id}`}>
-                ${(typeof totalAmount === 'string' ? parseFloat(totalAmount) : totalAmount).toFixed(2)}
+                {formatWithCurrency(totalAmount)}
               </span>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,10 +10,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { CreditCard, Receipt, Clock, Star, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CreditCard, Loader2, Mail, Receipt, Clock, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Reservation, Guest, Folio, Charge, Payment } from "@shared/schema";
+import type { Reservation, Guest, Folio, Charge, Payment, Property } from "@shared/schema";
+import { printReceipt } from "./ReceiptPrint";
 
 interface CheckOutFormProps {
   reservationId?: string;
@@ -21,6 +23,10 @@ interface CheckOutFormProps {
 
 export default function CheckOutForm({ reservationId, onCheckOutComplete }: CheckOutFormProps) {
   const { toast } = useToast();
+
+  const [checkOutResult, setCheckOutResult] = useState<any>(null);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendFailed, setResendFailed] = useState(false);
   
   const [checkOutDetails, setCheckOutDetails] = useState({
     departureTime: new Date().toTimeString().slice(0, 5),
@@ -37,7 +43,8 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
     folio: Folio & { charges: Charge[]; payments: Payment[] };
   }>({
     queryKey: ["/api/front-desk/reservation", reservationId, "folio"],
-    enabled: !!reservationId
+    enabled: !!reservationId,
+    retry: 1
   });
 
   const { data: guestData, isLoading: guestLoading } = useQuery<{ guest: Guest }>({
@@ -45,19 +52,27 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
     enabled: !!folioData?.reservation?.guestId
   });
 
+  const { data: propertiesData } = useQuery<{ properties: Property[] }>({
+    queryKey: ["/api/properties"]
+  });
+
   const checkOutMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", `/api/reservations/${reservationId}/check-out`);
+      const response = await apiRequest("POST", `/api/reservations/${reservationId}/check-out`);
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Check-out Successful",
         description: "Guest has been checked out successfully",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/departures-today"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/front-desk/current-guests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/front-desk/overview"] });
-      onCheckOutComplete?.(folioData);
+      queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
+      setCheckOutResult(data);
     },
     onError: (error: any) => {
       toast({
@@ -67,6 +82,67 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       });
     }
   });
+
+  const handlePrintReceipt = () => {
+    const property = propertiesData?.properties?.[0];
+    const propertyAddressParts = property
+      ? [property.address, property.city, property.state, property.country, property.postalCode].filter(Boolean)
+      : [];
+    const propertyAddress = propertyAddressParts.length > 0 ? propertyAddressParts.join(", ") : undefined;
+
+    printReceipt({
+      guestName: guest ? `${guest.firstName} ${guest.lastName}` : "Guest",
+      guestEmail: guest?.email,
+      confirmationNumber: reservation?.confirmationNumber || "—",
+      roomNumber: reservation?.roomId || "—",
+      checkInDate: reservation?.arrivalDate
+        ? new Date(reservation.arrivalDate).toLocaleDateString()
+        : "—",
+      checkOutDate: reservation?.departureDate
+        ? new Date(reservation.departureDate).toLocaleDateString()
+        : "—",
+      nights: reservation?.nights ?? null,
+      charges: folio?.charges?.map((c) => ({
+        id: c.id,
+        description: c.description,
+        amount: c.amount,
+      })) || [],
+      payments: folio?.payments?.map((p) => ({
+        id: p.id,
+        paymentMethod: p.paymentMethod,
+        paymentDate: p.paymentDate,
+        amount: p.amount,
+      })) || [],
+      totalCharges,
+      totalPayments,
+      balance,
+      propertyName: property?.name || "Hotel Management System",
+      propertyAddress,
+      propertyPhone: property?.phone ?? undefined,
+    });
+  };
+
+  const handleResendEmail = async () => {
+    if (!reservationId) return;
+    setResendLoading(true);
+    setResendFailed(false);
+    try {
+      await apiRequest("POST", `/api/reservations/${reservationId}/send-checkout-email`, {});
+      toast({
+        title: "Email Sent",
+        description: "Departure receipt has been resent to the guest.",
+      });
+    } catch (error: any) {
+      setResendFailed(true);
+      toast({
+        variant: "destructive",
+        title: "Email Failed",
+        description: error.message || "Failed to send email.",
+      });
+    } finally {
+      setResendLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +192,90 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
   const totalPayments = folio?.payments?.reduce((sum, p) => sum + parseFloat(p.amount), 0) || 0;
   const balance = totalCharges - totalPayments;
 
+  // Post-check-out success panel
+  if (checkOutResult) {
+    const emailStatus = checkOutResult.emailStatus as "sent" | "skipped" | "failed" | undefined;
+    return (
+      <div className="space-y-6">
+        <Alert className="border-green-200 bg-green-50">
+          <CheckCircle2 className="h-5 w-5 text-green-600" />
+          <AlertTitle className="text-green-800">Check-Out Complete</AlertTitle>
+          <AlertDescription className="text-green-700">
+            {guest ? `${guest.firstName} ${guest.lastName} has been successfully checked out.` : "Guest has been successfully checked out."}
+            {emailStatus === "sent"
+              ? " A departure receipt was emailed — use Resend below if it was not received."
+              : emailStatus === "failed"
+              ? ""
+              : guest?.email
+              ? " A departure receipt was emailed — use Resend below if it was not received."
+              : " No email address on file — add one to the guest profile and use Resend below."}
+          </AlertDescription>
+        </Alert>
+
+        {emailStatus === "failed" && (
+          <Alert className="border-yellow-300 bg-yellow-50" data-testid="alert-email-failed">
+            <AlertTriangle className="h-5 w-5 text-yellow-600" />
+            <AlertTitle className="text-yellow-800">Departure Receipt Email Failed</AlertTitle>
+            <AlertDescription className="text-yellow-700">
+              The departure receipt could not be delivered to the guest. The failure has been logged.
+              Use <strong>Resend Receipt Email</strong> below to try again, or print a copy for the guest.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {resendFailed && (
+          <Alert className="border-red-300 bg-red-50" data-testid="alert-resend-failed">
+            <AlertTriangle className="h-5 w-5 text-red-600" />
+            <AlertTitle className="text-red-800">Resend Failed</AlertTitle>
+            <AlertDescription className="text-red-700">
+              The departure receipt could not be delivered. This failure has been logged to the guest&apos;s communication history.
+              Please print a copy for the guest or try again later.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Post Check-Out Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePrintReceipt}
+              data-testid="button-print-receipt-success"
+            >
+              <Receipt className="h-4 w-4 mr-2" />
+              Print Receipt
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleResendEmail}
+              disabled={resendLoading}
+              data-testid="button-resend-receipt-email"
+            >
+              {resendLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4 mr-2" />
+              )}
+              Resend Receipt Email
+            </Button>
+            <div className="flex-1" />
+            <Button
+              type="button"
+              onClick={() => onCheckOutComplete?.(checkOutResult)}
+              data-testid="button-done-checkout"
+            >
+              Done
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {guest && reservation && (
@@ -152,7 +312,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
               {folio.charges.map((charge) => (
                 <div key={charge.id} className="flex justify-between text-sm">
                   <span>{charge.description}</span>
-                  <span>${parseFloat(charge.amount).toFixed(2)}</span>
+                  <span>Rs {parseFloat(charge.amount).toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -164,7 +324,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           
           <div className="flex justify-between font-semibold">
             <span>Total Charges</span>
-            <span>${totalCharges.toFixed(2)}</span>
+            <span>Rs {totalCharges.toFixed(2)}</span>
           </div>
 
           {folio?.payments && folio.payments.length > 0 && (
@@ -174,7 +334,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
                 {folio.payments.map((payment) => (
                   <div key={payment.id} className="flex justify-between text-sm text-hotel-success">
                     <span>{payment.paymentMethod} ({new Date(payment.paymentDate).toLocaleDateString()})</span>
-                    <span>-${parseFloat(payment.amount).toFixed(2)}</span>
+                    <span>-Rs {parseFloat(payment.amount).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -185,7 +345,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           <div className="flex justify-between font-bold text-xl">
             <span>Balance Due</span>
             <span data-testid="text-final-amount" className={balance > 0 ? "text-destructive" : "text-hotel-success"}>
-              ${balance.toFixed(2)}
+              Rs {balance.toFixed(2)}
             </span>
           </div>
         </CardContent>
@@ -270,7 +430,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           {balance > 0 && (
             <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
               <p className="text-sm font-medium text-destructive">
-                Outstanding Balance: ${balance.toFixed(2)}
+                Outstanding Balance: Rs {balance.toFixed(2)}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 Payment must be collected before guest departure
@@ -335,7 +495,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
           <Badge variant="outline">
-            Balance: ${balance.toFixed(2)}
+            Balance: Rs {balance.toFixed(2)}
           </Badge>
           <Badge variant={balance > 0 ? "destructive" : "default"}>
             {balance > 0 ? "Payment Required" : "Fully Paid"}
@@ -346,7 +506,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           <Button 
             type="button" 
             variant="outline"
-            onClick={() => window.print()}
+            onClick={handlePrintReceipt}
             data-testid="button-print-receipt"
           >
             Print Receipt
