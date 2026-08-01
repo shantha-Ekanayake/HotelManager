@@ -32,6 +32,54 @@ interface RegistrationCardData {
   printedAt?: string;
 }
 
+/** Shape returned by buildPropertyCardFields — the three property-related
+ *  fields that are forwarded to buildRegistrationCardHtml / printRegistrationCard. */
+export interface PropertyCardFields {
+  propertyName: string;
+  propertyAddress: string | undefined;
+  propertyPhone: string | undefined;
+}
+
+/**
+ * Map the first entry of a /api/properties response into the three fields
+ * needed by printRegistrationCard.
+ *
+ * Exported so this logic can be unit-tested independently and stays in sync
+ * with the HTML builder.  CheckInForm.handlePrintCard delegates to this
+ * function so any regression (wrong field, missing fallback) is caught by
+ * the test suite.
+ */
+export function buildPropertyCardFields(
+  property:
+    | {
+        name?: string | null;
+        address?: string | null;
+        city?: string | null;
+        state?: string | null;
+        country?: string | null;
+        postalCode?: string | null;
+        phone?: string | null;
+      }
+    | undefined
+    | null
+): PropertyCardFields {
+  const parts = property
+    ? [
+        property.address,
+        property.city,
+        property.state,
+        property.country,
+        property.postalCode,
+      ].filter(Boolean)
+    : [];
+
+  return {
+    propertyName: property?.name || "Hotel Management System",
+    propertyAddress: parts.length > 0 ? (parts as string[]).join(", ") : undefined,
+    propertyPhone: property?.phone ?? undefined,
+  };
+}
+
 /**
  * Build the full HTML string for a registration card.
  * Exported so it can be unit-tested in a Node environment without a browser.
