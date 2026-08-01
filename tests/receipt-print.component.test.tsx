@@ -55,6 +55,14 @@ function resetWindowMock() {
 const mockMutate = vi.fn();
 let mutationOnSuccess: ((data: any) => void) | undefined;
 
+/**
+ * Controls what the /api/properties query returns.
+ * Set to a properties array before a test; reset to undefined in beforeEach/afterEach.
+ * When undefined the mock returns no data for that key, exercising the
+ * "propertiesData?.properties?.[0] is undefined" path.
+ */
+let mockPropertiesResponseData: { properties: any[] } | undefined = undefined;
+
 const DEFAULT_FOLIO_QUERY_DATA = {
   reservation: {
     id: "res-1",
@@ -100,6 +108,9 @@ vi.mock("@tanstack/react-query", () => ({
         },
         isLoading: false,
       };
+    }
+    if (typeof key === "string" && key === "/api/properties") {
+      return { data: mockPropertiesResponseData, isLoading: false };
     }
     return { data: DEFAULT_FOLIO_QUERY_DATA, isLoading: false };
   }),
@@ -298,10 +309,12 @@ describe("CheckOutForm – form-level Print Receipt button", () => {
   beforeEach(() => {
     mockMutate.mockReset();
     mutationOnSuccess = undefined;
+    mockPropertiesResponseData = undefined;
     resetWindowMock();
   });
 
   afterEach(() => {
+    mockPropertiesResponseData = undefined;
     openSpy.mockReset();
   });
 
@@ -356,10 +369,12 @@ describe("CheckOutForm – success-panel Print Receipt button", () => {
   beforeEach(() => {
     mockMutate.mockReset();
     mutationOnSuccess = undefined;
+    mockPropertiesResponseData = undefined;
     resetWindowMock();
   });
 
   afterEach(() => {
+    mockPropertiesResponseData = undefined;
     openSpy.mockReset();
   });
 
@@ -417,5 +432,111 @@ describe("CheckOutForm – success-panel Print Receipt button", () => {
   it("success-panel Print Receipt button is still present when emailStatus is 'failed'", async () => {
     await renderAndCheckOut("failed");
     expect(screen.getByTestId("button-print-receipt-success")).toBeInTheDocument();
+  });
+});
+
+// ── CheckOutForm – property name / address in receipt ────────────────────────
+//
+// These tests verify the core contract: when /api/properties returns a real
+// property the printed receipt header must contain that property's name and
+// address, NOT the hard-coded placeholder "Hotel Management System".
+
+describe("CheckOutForm – receipt uses real property name and address from /api/properties", () => {
+  const REAL_PROPERTY = {
+    id: "prop-1",
+    name: "Sunset Palace Hotel",
+    address: "12 Ocean Drive",
+    city: "Malibu",
+    state: "CA",
+    country: "US",
+    postalCode: "90265",
+    phone: "+1-310-555-0199",
+  };
+
+  beforeEach(() => {
+    mockMutate.mockReset();
+    mutationOnSuccess = undefined;
+    mockPropertiesResponseData = undefined;
+    resetWindowMock();
+  });
+
+  afterEach(() => {
+    mockPropertiesResponseData = undefined;
+    openSpy.mockReset();
+  });
+
+  // ── form-level button ──────────────────────────────────────────────────────
+
+  it("form-level button: receipt header contains the real property name", () => {
+    mockPropertiesResponseData = { properties: [REAL_PROPERTY] };
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    expect(capturedHtml).toContain("Sunset Palace Hotel");
+  });
+
+  it("form-level button: receipt header does NOT contain the placeholder when a real property is provided", () => {
+    mockPropertiesResponseData = { properties: [REAL_PROPERTY] };
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    expect(capturedHtml).not.toContain("Hotel Management System");
+  });
+
+  it("form-level button: receipt header contains the assembled property address", () => {
+    mockPropertiesResponseData = { properties: [REAL_PROPERTY] };
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    // The address is joined from address + city + state + country + postalCode
+    expect(capturedHtml).toContain("12 Ocean Drive");
+    expect(capturedHtml).toContain("Malibu");
+  });
+
+  it("form-level button: receipt header contains the property phone number", () => {
+    mockPropertiesResponseData = { properties: [REAL_PROPERTY] };
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    expect(capturedHtml).toContain("+1-310-555-0199");
+  });
+
+  it("form-level button: falls back to the placeholder when /api/properties returns no properties", () => {
+    mockPropertiesResponseData = { properties: [] };
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    expect(capturedHtml).toContain("Hotel Management System");
+  });
+
+  // ── success-panel button ───────────────────────────────────────────────────
+
+  async function renderAndCheckOutWithProperty(property?: typeof REAL_PROPERTY) {
+    mockPropertiesResponseData = property ? { properties: [property] } : { properties: [] };
+    render(<CheckOutForm reservationId="res-1" />);
+    mutationOnSuccess?.({ reservation: { status: "checked_out" }, emailStatus: "sent" });
+    await waitFor(() =>
+      expect(screen.getByTestId("button-print-receipt-success")).toBeInTheDocument()
+    );
+  }
+
+  it("success-panel button: receipt header contains the real property name", async () => {
+    await renderAndCheckOutWithProperty(REAL_PROPERTY);
+    fireEvent.click(screen.getByTestId("button-print-receipt-success"));
+    expect(capturedHtml).toContain("Sunset Palace Hotel");
+  });
+
+  it("success-panel button: receipt header does NOT contain the placeholder when a real property is provided", async () => {
+    await renderAndCheckOutWithProperty(REAL_PROPERTY);
+    fireEvent.click(screen.getByTestId("button-print-receipt-success"));
+    expect(capturedHtml).not.toContain("Hotel Management System");
+  });
+
+  it("success-panel button: receipt header contains the assembled property address", async () => {
+    await renderAndCheckOutWithProperty(REAL_PROPERTY);
+    fireEvent.click(screen.getByTestId("button-print-receipt-success"));
+    expect(capturedHtml).toContain("12 Ocean Drive");
+    expect(capturedHtml).toContain("Malibu");
+  });
+
+  it("success-panel button: falls back to the placeholder when /api/properties returns no properties", async () => {
+    await renderAndCheckOutWithProperty(undefined);
+    fireEvent.click(screen.getByTestId("button-print-receipt-success"));
+    expect(capturedHtml).toContain("Hotel Management System");
   });
 });
