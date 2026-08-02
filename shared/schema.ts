@@ -470,7 +470,9 @@ export const insertRoomSchema = createInsertSchema(rooms).omit({
   updatedAt: true
 });
 
-export const insertGuestSchema = createInsertSchema(guests).omit({
+export const insertGuestSchema = createInsertSchema(guests, {
+  tags: z.array(z.string()).optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true
