@@ -13,7 +13,7 @@ interface User {
 export function useAuth() {
   const token = localStorage.getItem("hms_token");
 
-  const { data: authData, isLoading, error } = useQuery({
+  const { data: authData, isLoading, error } = useQuery<{ user: User }, Error, User>({
     queryKey: ["/api", "auth", "me"],
     retry: false,
     enabled: !!token, // Only run query if token exists
@@ -27,7 +27,7 @@ export function useAuth() {
   };
 
   return {
-    user: authData as User | undefined,
+    user: authData,
     isLoading: isLoading && !!token, // Only show loading if we have a token
     isAuthenticated: !!authData && !!token,
     error,
