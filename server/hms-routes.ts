@@ -574,6 +574,15 @@ export function registerRoomRoutes(app: Express) {
         if (!req.user || !canAccessProperty(req.user, roomType.propertyId)) {
           return res.status(403).json({ error: "Access denied" });
         }
+        // Guard: refuse to delete a room type that has any rooms referencing it
+        // (active or inactive — inactive rooms still hold the FK and would cause a DB error)
+        const roomsUsingType = await storage.getRoomsByRoomType(id);
+        if (roomsUsingType.length > 0) {
+          return res.status(409).json({
+            error: "Cannot delete room type with existing rooms",
+            details: `Room type is still referenced by ${roomsUsingType.length} room(s). Remove or reassign those rooms first.`
+          });
+        }
         await storage.deleteRoomType(id);
         res.json({ success: true });
       } catch (error) {

@@ -509,6 +509,10 @@ class MemStorage implements IHMSStorage {
     return Array.from(this.rooms.values()).filter(r => r.propertyId === propertyId);
   }
 
+  async getRoomsByRoomType(roomTypeId: string): Promise<Room[]> {
+    return Array.from(this.rooms.values()).filter(r => r.roomTypeId === roomTypeId);
+  }
+
   async getRoomByNumber(propertyId: string, roomNumber: string): Promise<Room | undefined> {
     return Array.from(this.rooms.values()).find(r => r.propertyId === propertyId && r.roomNumber === roomNumber);
   }
