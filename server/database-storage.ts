@@ -124,6 +124,9 @@ export interface IHMSStorage {
   createRatePlan(ratePlan: InsertRatePlan): Promise<RatePlan>;
   updateRatePlan(id: string, ratePlan: Partial<InsertRatePlan>): Promise<RatePlan>;
   deleteRatePlan(ratePlanId: string): Promise<boolean>;
+  getActiveReservationsByRatePlan(ratePlanId: string): Promise<Reservation[]>;
+  getReservationsByRatePlan(ratePlanId: string): Promise<Reservation[]>;
+  getDailyRatesByRatePlan(ratePlanId: string): Promise<DailyRate[]>;
   
   // Daily Rate Management
   getDailyRate(propertyId: string, roomTypeId: string, ratePlanId: string, date: Date): Promise<DailyRate | undefined>;
@@ -711,6 +714,24 @@ export class DatabaseStorage implements IHMSStorage {
   async deleteRatePlan(ratePlanId: string): Promise<boolean> {
     await db.delete(ratePlans).where(eq(ratePlans.id, ratePlanId));
     return true;
+  }
+
+  async getActiveReservationsByRatePlan(ratePlanId: string): Promise<Reservation[]> {
+    return await db.select().from(reservations)
+      .where(and(
+        eq(reservations.ratePlanId, ratePlanId),
+        sql`${reservations.status} != 'cancelled'`
+      ));
+  }
+
+  async getReservationsByRatePlan(ratePlanId: string): Promise<Reservation[]> {
+    return await db.select().from(reservations)
+      .where(eq(reservations.ratePlanId, ratePlanId));
+  }
+
+  async getDailyRatesByRatePlan(ratePlanId: string): Promise<DailyRate[]> {
+    return await db.select().from(dailyRates)
+      .where(eq(dailyRates.ratePlanId, ratePlanId));
   }
 
   // Daily Rate Management

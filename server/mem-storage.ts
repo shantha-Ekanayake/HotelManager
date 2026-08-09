@@ -911,6 +911,24 @@ class MemStorage implements IHMSStorage {
     return true;
   }
 
+  async getActiveReservationsByRatePlan(ratePlanId: string): Promise<Reservation[]> {
+    return Array.from(this.reservations.values()).filter(
+      (r) => r.ratePlanId === ratePlanId && r.status !== "cancelled"
+    );
+  }
+
+  async getReservationsByRatePlan(ratePlanId: string): Promise<Reservation[]> {
+    return Array.from(this.reservations.values()).filter(
+      (r) => r.ratePlanId === ratePlanId
+    );
+  }
+
+  async getDailyRatesByRatePlan(ratePlanId: string): Promise<DailyRate[]> {
+    return Array.from(this.dailyRates.values()).filter(
+      (dr) => dr.ratePlanId === ratePlanId
+    );
+  }
+
   // Stub implementations for remaining methods (simplified for demo)
   async getDailyRate(): Promise<DailyRate | undefined> { return undefined; }
   async getDailyRates(): Promise<DailyRate[]> { return []; }

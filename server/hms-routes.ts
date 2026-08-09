@@ -607,6 +607,27 @@ export function registerRoomRoutes(app: Express) {
         if (!req.user || !canAccessProperty(req.user, ratePlan.propertyId)) {
           return res.status(403).json({ error: "Access denied" });
         }
+        // Guard: refuse to delete a rate plan referenced by any reservation (any status)
+        // or any daily-rate row — both hold non-null FKs that would cause a DB error.
+        const allReservations = await storage.getReservationsByRatePlan(id);
+        if (allReservations.length > 0) {
+          const active = allReservations.filter(r => r.status !== "cancelled");
+          const cancelled = allReservations.filter(r => r.status === "cancelled");
+          const detail = active.length > 0
+            ? `Rate plan is still referenced by ${active.length} non-cancelled reservation(s). Cancel or reassign those reservations first.`
+            : `Rate plan is still referenced by ${cancelled.length} cancelled reservation(s) and cannot be removed while those records exist.`;
+          return res.status(409).json({
+            error: "Cannot delete rate plan with existing reservations",
+            details: detail
+          });
+        }
+        const dailyRatesForPlan = await storage.getDailyRatesByRatePlan(id);
+        if (dailyRatesForPlan.length > 0) {
+          return res.status(409).json({
+            error: "Cannot delete rate plan with existing daily rates",
+            details: `Rate plan is still referenced by ${dailyRatesForPlan.length} daily rate record(s). Remove those records first.`
+          });
+        }
         await storage.deleteRatePlan(id);
         res.json({ success: true });
       } catch (error) {
