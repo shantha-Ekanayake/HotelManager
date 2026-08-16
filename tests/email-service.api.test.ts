@@ -1,0 +1,161 @@
+/**
+ * Unit tests for the email-service no-email guard.
+ *
+ * Strategy: stub nodemailer.createTransport so the tests exercise the real
+ * sendCheckInEmail / sendCheckOutEmail implementations on the SMTP-configured
+ * code path without ever touching a real mail server.  We then assert:
+ *
+ *  - when guest.email is null/undefined → returns "skipped", sendMail never called
+ *  - when guest.email is a real address  → returns "sent",    sendMail called once
+ */
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+
+// ── stub nodemailer BEFORE the module under test is imported ─────────────────
+const sendMailMock = vi.fn().mockResolvedValue({ messageId: "test-msg-id" });
+const createTransportMock = vi.fn().mockReturnValue({ sendMail: sendMailMock });
+
+vi.mock("nodemailer", () => ({
+  default: { createTransport: (...args: unknown[]) => createTransportMock(...args) },
+}));
+
+// ── import real implementation (receives stubbed nodemailer) ─────────────────
+import { sendCheckInEmail, sendCheckOutEmail } from "../server/email-service.js";
+
+// ── shared fixtures ──────────────────────────────────────────────────────────
+const BASE_RESERVATION = {
+  confirmationNumber: "CONF-001",
+  arrivalDate: new Date("2026-08-16"),
+  departureDate: new Date("2026-08-17"),
+  nights: 1,
+  totalAmount: "150.00",
+  depositAmount: null,
+  depositPaid: false,
+};
+
+const BASE_FOLIO = {
+  charges: [{ description: "Room charge", amount: "150.00" }],
+  payments: [{ paymentMethod: "cash", amount: "150.00", paymentDate: new Date("2026-08-17") }],
+};
+
+// ── setup / teardown ─────────────────────────────────────────────────────────
+beforeEach(() => {
+  // Simulate SMTP configured so we reach the no-email guard instead of the
+  // no-SMTP guard.
+  process.env.SMTP_HOST = "smtp.example.com";
+  process.env.SMTP_PORT = "587";
+  process.env.SMTP_USER = "user@example.com";
+  process.env.SMTP_PASS = "secret";
+  process.env.SMTP_FROM = "noreply@example.com";
+  sendMailMock.mockClear();
+  createTransportMock.mockClear();
+});
+
+afterEach(() => {
+  delete process.env.SMTP_HOST;
+  delete process.env.SMTP_PORT;
+  delete process.env.SMTP_USER;
+  delete process.env.SMTP_PASS;
+  delete process.env.SMTP_FROM;
+});
+
+// ── sendCheckInEmail ─────────────────────────────────────────────────────────
+describe("sendCheckInEmail – no-email guard (SMTP configured)", () => {
+  it("returns 'skipped' and never calls sendMail when guest.email is null", async () => {
+    const guest = { firstName: "Jane", lastName: "Doe", email: null };
+
+    const result = await sendCheckInEmail(
+      guest,
+      BASE_RESERVATION,
+      "101",
+      "Grand Hotel",
+      "+1-555-0000"
+    );
+
+    expect(result).toBe("skipped");
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 'skipped' and never calls sendMail when guest.email is undefined", async () => {
+    const guest = { firstName: "Jane", lastName: "Doe", email: undefined };
+
+    const result = await sendCheckInEmail(
+      guest,
+      BASE_RESERVATION,
+      "101",
+      "Grand Hotel"
+    );
+
+    expect(result).toBe("skipped");
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 'sent' and calls sendMail exactly once when guest has a real email", async () => {
+    const guest = { firstName: "Jane", lastName: "Doe", email: "jane@example.com" };
+
+    const result = await sendCheckInEmail(
+      guest,
+      BASE_RESERVATION,
+      "101",
+      "Grand Hotel",
+      "+1-555-0000"
+    );
+
+    expect(result).toBe("sent");
+    expect(sendMailMock).toHaveBeenCalledOnce();
+
+    // Confirm the mail was addressed to the guest
+    const mailArgs = sendMailMock.mock.calls[0][0] as { to: string; subject: string };
+    expect(mailArgs.to).toContain("jane@example.com");
+    expect(mailArgs.subject).toContain("CONF-001");
+  });
+});
+
+// ── sendCheckOutEmail ────────────────────────────────────────────────────────
+describe("sendCheckOutEmail – no-email guard (SMTP configured)", () => {
+  it("returns 'skipped' and never calls sendMail when guest.email is null", async () => {
+    const guest = { firstName: "John", lastName: "Smith", email: null };
+
+    const result = await sendCheckOutEmail(
+      guest,
+      BASE_RESERVATION,
+      BASE_FOLIO,
+      "Grand Hotel"
+    );
+
+    expect(result).toBe("skipped");
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 'skipped' and never calls sendMail when guest.email is undefined", async () => {
+    const guest = { firstName: "John", lastName: "Smith", email: undefined };
+
+    const result = await sendCheckOutEmail(
+      guest,
+      BASE_RESERVATION,
+      BASE_FOLIO,
+      "Grand Hotel"
+    );
+
+    expect(result).toBe("skipped");
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 'sent' and calls sendMail exactly once when guest has a real email", async () => {
+    const guest = { firstName: "John", lastName: "Smith", email: "john@example.com" };
+
+    const result = await sendCheckOutEmail(
+      guest,
+      BASE_RESERVATION,
+      BASE_FOLIO,
+      "Grand Hotel"
+    );
+
+    expect(result).toBe("sent");
+    expect(sendMailMock).toHaveBeenCalledOnce();
+
+    // Confirm the mail was addressed to the guest
+    const mailArgs = sendMailMock.mock.calls[0][0] as { to: string; subject: string };
+    expect(mailArgs.to).toContain("john@example.com");
+    expect(mailArgs.subject).toContain("CONF-001");
+  });
+});
