@@ -40,6 +40,60 @@ export interface PropertyCardFields {
   propertyPhone: string | undefined;
 }
 
+/** Shape of the guest fields forwarded to buildRegistrationCardHtml / printRegistrationCard. */
+export interface GuestCardFields {
+  guestName: string;
+  guestEmail: string | null | undefined;
+  guestPhone: string | null | undefined;
+  idType: string | null | undefined;
+  idNumber: string | null | undefined;
+  nationality: string | null | undefined;
+}
+
+/**
+ * Map a guest record and any in-form ID-verification overrides into the guest
+ * fields needed by printRegistrationCard.
+ *
+ * Exported so this logic can be unit-tested independently.
+ * CheckInForm.handlePrintCard delegates to this function so any field-mapping
+ * bug (wrong guest, swapped field) is caught by the test suite.
+ *
+ * @param guest          The guest object from GET /api/guests/:id, or undefined.
+ * @param idVerification In-form overrides for idType / idNumber / nationality.
+ *                       When non-empty they take precedence over the stored
+ *                       guest record; this mirrors what staff type at check-in.
+ */
+export function buildGuestCardFields(
+  guest:
+    | {
+        firstName?: string | null;
+        lastName?: string | null;
+        email?: string | null;
+        phone?: string | null;
+        idType?: string | null;
+        idNumber?: string | null;
+        nationality?: string | null;
+      }
+    | undefined
+    | null,
+  idVerification: {
+    idType?: string;
+    idNumber?: string;
+    nationality?: string;
+  } = {}
+): GuestCardFields {
+  return {
+    guestName: guest
+      ? `${guest.firstName ?? ""} ${guest.lastName ?? ""}`.trim() || "Guest"
+      : "Guest",
+    guestEmail: guest?.email,
+    guestPhone: guest?.phone,
+    idType: idVerification.idType || guest?.idType,
+    idNumber: idVerification.idNumber || guest?.idNumber,
+    nationality: idVerification.nationality || guest?.nationality,
+  };
+}
+
 /**
  * Map the first entry of a /api/properties response into the three fields
  * needed by printRegistrationCard.
