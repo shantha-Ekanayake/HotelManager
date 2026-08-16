@@ -207,3 +207,84 @@ describe("Guests communications tab — FAILED entry", () => {
     });
   });
 });
+
+// ── badge-failed-email-count (Comms tab trigger count badge) ──────────────────
+
+describe("Guests communications tab — badge-failed-email-count", () => {
+  const FAILED_COMM_A = {
+    id: "comm-count-1",
+    guestId: DEMO_GUEST.id,
+    type: "email",
+    direction: "outbound",
+    subject: "Reservation reminder [FAILED]",
+    content: "Failed to deliver.",
+    staffId: null,
+    createdAt: "2026-07-01T10:00:00Z",
+  };
+
+  const FAILED_COMM_B = {
+    id: "comm-count-2",
+    guestId: DEMO_GUEST.id,
+    type: "email",
+    direction: "outbound",
+    subject: "Check-out receipt [FAILED]",
+    content: "Failed to deliver.",
+    staffId: null,
+    createdAt: "2026-07-02T10:00:00Z",
+  };
+
+  const SUCCESSFUL_COMM = {
+    id: "comm-count-ok",
+    guestId: DEMO_GUEST.id,
+    type: "email",
+    direction: "outbound",
+    subject: "Welcome email",
+    content: "Thank you for your stay.",
+    staffId: null,
+    createdAt: "2026-07-03T10:00:00Z",
+  };
+
+  it("renders badge-failed-email-count with count 1 when there is one FAILED communication", async () => {
+    communicationsPayload = { communications: [FAILED_COMM_A] };
+    await renderAndSelectGuest();
+
+    await waitFor(() => {
+      const badge = screen.getByTestId("badge-failed-email-count");
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveTextContent("1 failed");
+    });
+  });
+
+  it("renders badge-failed-email-count with count 2 when there are two FAILED communications", async () => {
+    communicationsPayload = { communications: [FAILED_COMM_A, FAILED_COMM_B] };
+    await renderAndSelectGuest();
+
+    await waitFor(() => {
+      const badge = screen.getByTestId("badge-failed-email-count");
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveTextContent("2 failed");
+    });
+  });
+
+  it("does NOT render badge-failed-email-count when all communications are successful", async () => {
+    communicationsPayload = { communications: [SUCCESSFUL_COMM] };
+    await renderAndSelectGuest();
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("badge-failed-email-count")
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("does NOT render badge-failed-email-count when there are no communications", async () => {
+    communicationsPayload = { communications: [] };
+    await renderAndSelectGuest();
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("badge-failed-email-count")
+      ).not.toBeInTheDocument();
+    });
+  });
+});
