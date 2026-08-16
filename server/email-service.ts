@@ -200,7 +200,7 @@ export async function sendCheckOutEmail(
   reservation: ReservationInfo,
   folio: FolioInfo,
   propertyName: string
-): Promise<"sent" | "skipped"> {
+): Promise<"sent" | "skipped" | "failed"> {
   const smtpHost = process.env.SMTP_HOST;
 
   if (!smtpHost) {
@@ -232,12 +232,17 @@ export async function sendCheckOutEmail(
   const guestName = `${guest.firstName} ${guest.lastName}`;
   const htmlContent = buildCheckOutEmailHtml(guest, reservation, folio, propertyName);
 
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@hotel.com",
-    to: `${guestName} <${guest.email}>`,
-    subject: `Your Departure Receipt – ${propertyName} – Confirmation #${reservation.confirmationNumber}`,
-    html: htmlContent
-  });
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@hotel.com",
+      to: `${guestName} <${guest.email}>`,
+      subject: `Your Departure Receipt – ${propertyName} – Confirmation #${reservation.confirmationNumber}`,
+      html: htmlContent
+    });
+  } catch (err) {
+    console.error("[EMAIL] Failed to send check-out receipt to:", guest.email, "| Confirmation:", reservation.confirmationNumber, err);
+    return "failed";
+  }
 
   console.log("[EMAIL] Check-out receipt email sent to:", guest.email, "| Confirmation:", reservation.confirmationNumber);
   return "sent";
@@ -249,7 +254,7 @@ export async function sendCheckInEmail(
   roomNumber: string,
   propertyName: string,
   propertyContact?: string
-): Promise<"sent" | "skipped"> {
+): Promise<"sent" | "skipped" | "failed"> {
   const smtpHost = process.env.SMTP_HOST;
 
   if (!smtpHost) {
@@ -279,12 +284,17 @@ export async function sendCheckInEmail(
   const guestName = `${guest.firstName} ${guest.lastName}`;
   const htmlContent = buildCheckInEmailHtml(guest, reservation, roomNumber, propertyName, propertyContact);
 
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@hotel.com",
-    to: `${guestName} <${guest.email}>`,
-    subject: `Welcome to ${propertyName} – Confirmation #${reservation.confirmationNumber}`,
-    html: htmlContent
-  });
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@hotel.com",
+      to: `${guestName} <${guest.email}>`,
+      subject: `Welcome to ${propertyName} – Confirmation #${reservation.confirmationNumber}`,
+      html: htmlContent
+    });
+  } catch (err) {
+    console.error("[EMAIL] Failed to send check-in email to:", guest.email, "| Confirmation:", reservation.confirmationNumber, err);
+    return "failed";
+  }
 
   console.log("[EMAIL] Check-in confirmation email sent to:", guest.email, "| Confirmation:", reservation.confirmationNumber);
   return "sent";

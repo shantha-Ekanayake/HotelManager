@@ -1397,11 +1397,26 @@ export function registerReservationRoutes(app: Express) {
               room?.roomNumber || roomId || "—",
               property?.name || "Our Hotel"
             );
+            if (emailStatus === "failed") {
+              // sendCheckInEmail absorbed the SMTP error; write the audit record here
+              try {
+                await storage.createGuestCommunication({
+                  guestId: reservation.guestId,
+                  type: "email",
+                  direction: "outbound",
+                  subject: `Check-in confirmation – #${reservation.confirmationNumber} [FAILED]`,
+                  content: `Email delivery failed during check-in (email service returned failure).`,
+                  staffId: req.user?.id || null
+                });
+              } catch (logErr) {
+                console.error("Failed to log email failure to guest_communications:", logErr);
+              }
+            }
           }
         } catch (emailErr: any) {
           console.error("Failed to send check-in email:", emailErr);
           emailStatus = "failed";
-          // Record the failure in guest_communications so staff have an audit trail
+          // Record failures thrown outside the email service (e.g. storage errors)
           try {
             await storage.createGuestCommunication({
               guestId: reservation.guestId,
@@ -1441,15 +1456,47 @@ export function registerReservationRoutes(app: Express) {
         if (!guest) {
           return res.status(404).json({ error: "Guest not found" });
         }
-        await sendCheckInEmail(
+        const emailStatus = await sendCheckInEmail(
           guest,
           reservation,
           room?.roomNumber || reservation.roomId || "—",
           property?.name || "Our Hotel"
         );
-        res.json({ success: true, message: "Check-in email sent" });
-      } catch (error) {
-        console.error("Resend email error:", error);
+        if (emailStatus === "failed") {
+          // Record the resend failure so staff have an audit trail
+          try {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Check-in confirmation resend – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Resend of check-in confirmation email failed (email service returned failure).`,
+              staffId: req.user?.id || null
+            });
+          } catch (logErr) {
+            console.error("Failed to log resend failure to guest_communications:", logErr);
+          }
+          return res.status(502).json({ error: "Email service failed to deliver the message", emailStatus: "failed" });
+        }
+        res.json({ success: true, message: "Check-in email sent", emailStatus });
+      } catch (error: any) {
+        console.error("Resend check-in email error:", error);
+        // Log the exception-level failure too
+        try {
+          const reservation = await storage.getReservation(req.params.id);
+          if (reservation) {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Check-in confirmation resend – #${reservation.confirmationNumber} [FAILED]`,
+              content: `Resend of check-in confirmation email failed. Error: ${error?.message || String(error)}`,
+              staffId: req.user?.id || null
+            });
+          }
+        } catch (logErr) {
+          console.error("Failed to log resend exception to guest_communications:", logErr);
+        }
         res.status(500).json({ error: "Failed to send email" });
       }
     }
@@ -1494,11 +1541,26 @@ export function registerReservationRoutes(app: Express) {
               { charges, payments },
               property?.name || "Our Hotel"
             );
+            if (emailStatus === "failed") {
+              // sendCheckOutEmail absorbed the SMTP error; write the audit record here
+              try {
+                await storage.createGuestCommunication({
+                  guestId: reservation.guestId,
+                  type: "email",
+                  direction: "outbound",
+                  subject: `Departure receipt – #${reservation.confirmationNumber} [FAILED]`,
+                  content: `Email delivery failed during check-out (email service returned failure).`,
+                  staffId: req.user?.id || null
+                });
+              } catch (logErr) {
+                console.error("Failed to log email failure to guest_communications:", logErr);
+              }
+            }
           }
         } catch (emailErr: any) {
           console.error("Failed to send check-out email:", emailErr);
           emailStatus = "failed";
-          // Record the failure in guest_communications so staff have an audit trail
+          // Record failures thrown outside the email service (e.g. storage errors)
           try {
             await storage.createGuestCommunication({
               guestId: reservation.guestId,
