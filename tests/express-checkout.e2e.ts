@@ -309,3 +309,198 @@ test.describe("express check-out flow (self-contained fixtures)", () => {
     ).toBeVisible({ timeout: 15_000 });
   });
 });
+
+// ── API-level test: outstanding balance rejection ─────────────────────────────
+
+test.describe("express check-out: outstanding-balance rejection (API)", () => {
+  let auth: { token: string; propertyId: string } | null = null;
+
+  let testRoomTypeId: string | null = null;
+  let testRatePlanId: string | null = null;
+  let testRoomId: string | null = null;
+  let testGuestId: string | null = null;
+  let testReservationId: string | null = null;
+
+  // ── setup ────────────────────────────────────────────────────────────────
+  test.beforeAll(async () => {
+    const base   = "http://localhost:5000";
+    const suffix = `${Date.now()}-bal`;
+
+    for (const creds of CREDENTIALS) {
+      auth = await loginViaApi(base, creds.username, creds.password);
+      if (auth) break;
+    }
+    if (!auth) return;
+
+    const ctx = await apiRequest.newContext({
+      baseURL: base,
+      extraHTTPHeaders: { Authorization: `Bearer ${auth.token}` },
+    });
+    try {
+      // 1. Room type
+      const rtRes = await ctx.post(
+        `/api/properties/${auth.propertyId}/room-types`,
+        {
+          data: {
+            name: `E2E-BAL-RoomType-${suffix}`,
+            description: "Playwright balance-rejection fixture — safe to delete",
+            maxOccupancy: 2,
+            baseRate: "150.00",
+            amenities: [],
+            isActive: true,
+          },
+        }
+      );
+      if (rtRes.ok()) testRoomTypeId = (await rtRes.json()).roomType?.id ?? null;
+
+      // 2. Rate plan
+      const rpRes = await ctx.post(
+        `/api/properties/${auth.propertyId}/rate-plans`,
+        {
+          data: {
+            name: `E2E-BAL-RatePlan-${suffix}`,
+            description: "Playwright balance-rejection fixture — safe to delete",
+            isActive: true,
+            isRefundable: true,
+          },
+        }
+      );
+      if (rpRes.ok()) testRatePlanId = (await rpRes.json()).ratePlan?.id ?? null;
+
+      // 3. Room
+      if (testRoomTypeId) {
+        const roomRes = await ctx.post(
+          `/api/properties/${auth.propertyId}/rooms`,
+          {
+            data: {
+              roomTypeId: testRoomTypeId,
+              roomNumber: `E2E-BAL-${suffix}`,
+              floor: 9,
+              status: "available",
+              isActive: true,
+            },
+          }
+        );
+        if (roomRes.ok()) testRoomId = (await roomRes.json()).room?.id ?? null;
+      }
+
+      // 4. Guest
+      const guestRes = await ctx.post("/api/guests", {
+        data: {
+          firstName: "E2E",
+          lastName: "BalanceRejection",
+          email: null,
+          phone: null,
+          address: null,
+          city: null,
+          state: null,
+          country: null,
+          postalCode: null,
+          idType: null,
+          idNumber: null,
+          nationality: null,
+          vipStatus: false,
+          notes: null,
+          dateOfBirth: null,
+          preferences: {},
+        },
+      });
+      if (guestRes.ok()) testGuestId = (await guestRes.json()).guest?.id ?? null;
+
+      // 5. Reservation with non-zero totalAmount
+      if (testRoomTypeId && testRatePlanId && testGuestId) {
+        const today     = new Date().toISOString().split("T")[0];
+        const yesterday = new Date(Date.now() - 86_400_000)
+          .toISOString()
+          .split("T")[0];
+
+        const resRes = await ctx.post("/api/reservations", {
+          data: {
+            propertyId:    auth.propertyId,
+            guestId:       testGuestId,
+            roomTypeId:    testRoomTypeId,
+            ratePlanId:    testRatePlanId,
+            status:        "confirmed",
+            arrivalDate:   yesterday,
+            departureDate: today,
+            nights:        1,
+            adults:        1,
+            children:      0,
+            totalAmount:   "150.00",   // non-zero → folio will have an outstanding balance
+            notes:         "E2E_EXPRESS_CHECKOUT_BALANCE_REJECTION",
+          },
+        });
+        if (resRes.ok()) testReservationId = (await resRes.json()).reservation?.id ?? null;
+      }
+
+      // 6. Check the reservation in so it becomes "checked_in" and a folio is created
+      if (testReservationId && testRoomId) {
+        await ctx.post(`/api/reservations/${testReservationId}/check-in`, {
+          data: {
+            roomId:      testRoomId,
+            idType:      "passport",
+            idNumber:    "PW000099",
+            nationality: "British",
+            signature:   "data:image/png;base64,iVBORw0KGgo=",
+          },
+        });
+      }
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
+  // ── teardown ─────────────────────────────────────────────────────────────
+  test.afterAll(async () => {
+    if (!auth) return;
+    const ctx = await apiRequest.newContext({
+      baseURL: "http://localhost:5000",
+      extraHTTPHeaders: { Authorization: `Bearer ${auth.token}` },
+    });
+    try {
+      if (testReservationId) await ctx.delete(`/api/reservations/${testReservationId}`);
+      if (testRoomId)        await ctx.delete(`/api/rooms/${testRoomId}`);
+      if (testRoomTypeId)    await ctx.delete(`/api/room-types/${testRoomTypeId}`);
+      if (testRatePlanId)    await ctx.delete(`/api/rate-plans/${testRatePlanId}`);
+      if (testGuestId)       await ctx.delete(`/api/guests/${testGuestId}`);
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
+  // ── test ─────────────────────────────────────────────────────────────────
+  test("rejects express checkout with 400 when folio has an outstanding balance", async () => {
+    if (!auth) {
+      test.skip(true, "No known user credentials in this DB — seed the DB first.");
+      return;
+    }
+    if (!testReservationId) {
+      test.skip(true, "Fixture setup failed — reservation could not be created or checked in.");
+      return;
+    }
+
+    const ctx = await apiRequest.newContext({
+      baseURL: "http://localhost:5000",
+      extraHTTPHeaders: { Authorization: `Bearer ${auth!.token}` },
+    });
+    try {
+      const res = await ctx.post(
+        `/api/reservations/${testReservationId}/express-checkout`,
+        { data: {} }
+      );
+
+      // Must be rejected with a 4xx status
+      expect(res.status()).toBeGreaterThanOrEqual(400);
+      expect(res.status()).toBeLessThan(500);
+
+      const body = await res.json();
+      // The error message must reference the outstanding balance
+      expect(
+        typeof body.error === "string" &&
+          body.error.toLowerCase().includes("balance")
+      ).toBe(true);
+    } finally {
+      await ctx.dispose();
+    }
+  });
+});
