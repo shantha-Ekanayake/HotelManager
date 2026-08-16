@@ -480,4 +480,52 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
     expect(guestArg.firstName).toBe("Resend");
     expect(guestArg.lastName).toBe("NoEmail");
   });
+
+  it("returns 502 and records a failure communication when sendCheckOutEmail returns 'failed'", async () => {
+    mockSendCheckOutEmail.mockClear();
+    mockSendCheckOutEmail.mockResolvedValueOnce("failed");
+
+    const commsBefore = await memStorage.getGuestCommunications(testGuestId);
+
+    const res = await request(app)
+      .post(`/api/reservations/${testReservationId}/send-checkout-email`)
+      .set("Authorization", authHeader)
+      .send({});
+
+    expect(res.status).toBe(502);
+    expect(res.body).toMatchObject({ emailStatus: "failed" });
+
+    // A failure audit record must have been written
+    const commsAfter = await memStorage.getGuestCommunications(testGuestId);
+    expect(commsAfter.length).toBeGreaterThan(commsBefore.length);
+    const failureEntry = commsAfter.find(
+      (c: { subject: string }) => c.subject.includes("[FAILED]")
+    );
+    expect(failureEntry).toBeDefined();
+    expect(failureEntry?.subject).toMatch(/departure receipt resend/i);
+  });
+
+  it("returns 500 and records a failure communication when sendCheckOutEmail throws", async () => {
+    mockSendCheckOutEmail.mockClear();
+    mockSendCheckOutEmail.mockRejectedValueOnce(new Error("SMTP connection refused"));
+
+    const commsBefore = await memStorage.getGuestCommunications(testGuestId);
+
+    const res = await request(app)
+      .post(`/api/reservations/${testReservationId}/send-checkout-email`)
+      .set("Authorization", authHeader)
+      .send({});
+
+    expect(res.status).toBe(500);
+
+    // A failure audit record must have been written
+    const commsAfter = await memStorage.getGuestCommunications(testGuestId);
+    expect(commsAfter.length).toBeGreaterThan(commsBefore.length);
+    const failureEntry = commsAfter.find(
+      (c: { subject: string; content: string }) =>
+        c.subject.includes("[FAILED]") &&
+        c.content.includes("SMTP connection refused")
+    );
+    expect(failureEntry).toBeDefined();
+  });
 });
