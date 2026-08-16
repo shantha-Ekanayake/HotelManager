@@ -308,6 +308,27 @@ describe("printReceipt() – HTML content", () => {
     // (it may still appear in the HTML entity set, so test the field-label wrapper)
     expect(capturedHtml).not.toContain("field-label\">Nights");
   });
+
+  it("omits Tel: and address lines when the property has no phone and no address", () => {
+    // SAMPLE_RECEIPT_DATA has no propertyPhone or propertyAddress — only a name
+    printReceipt({
+      ...SAMPLE_RECEIPT_DATA,
+      propertyPhone: undefined,
+      propertyAddress: undefined,
+    });
+    expect(capturedHtml).not.toContain("Tel:");
+    expect(capturedHtml).not.toContain('class="address"');
+  });
+
+  it("renders the address line but omits Tel: when the property has an address but no phone", () => {
+    printReceipt({
+      ...SAMPLE_RECEIPT_DATA,
+      propertyAddress: "123 Main St, Springfield",
+      propertyPhone: undefined,
+    });
+    expect(capturedHtml).toContain("123 Main St, Springfield");
+    expect(capturedHtml).not.toContain("Tel:");
+  });
 });
 
 // ── CheckOutForm – form-level "Print Receipt" button ─────────────────────────
