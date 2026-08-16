@@ -144,3 +144,85 @@ describe("GET /api/guests/:id/communications — FAILED entry", () => {
     }
   });
 });
+
+describe("POST /api/guests/:id/communications — save new entry", () => {
+  const validBody = {
+    type: "note",
+    direction: "internal",
+    subject: "Room preferences discussed",
+    content: "Guest requested extra pillows and quiet room.",
+  };
+
+  it("returns HTTP 201 with the saved record", async () => {
+    const res = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send(validBody);
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty("communication");
+  });
+
+  it("returned record contains all expected fields", async () => {
+    const res = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send(validBody);
+
+    const comm = res.body.communication;
+    expect(comm).toHaveProperty("id");
+    expect(comm.guestId).toBe(guestId);
+    expect(comm.type).toBe(validBody.type);
+    expect(comm.direction).toBe(validBody.direction);
+    expect(comm.subject).toBe(validBody.subject);
+    expect(comm.content).toBe(validBody.content);
+    expect(comm).toHaveProperty("createdAt");
+  });
+
+  it("new entry immediately appears in the GET list", async () => {
+    // Create a uniquely-identifiable entry
+    const unique = "unique-marker-" + Date.now();
+    await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send({ ...validBody, content: unique });
+
+    const list = await request(app)
+      .get(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader);
+
+    expect(list.status).toBe(200);
+    const found = list.body.communications.find((c: any) => c.content === unique);
+    expect(found).toBeDefined();
+  });
+
+  it("returns 400 when content is missing", async () => {
+    const { content: _omit, ...bodyWithoutContent } = validBody;
+    const res = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send(bodyWithoutContent);
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when type is missing", async () => {
+    const { type: _omit, ...bodyWithoutType } = validBody;
+    const res = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send(bodyWithoutType);
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when direction is missing", async () => {
+    const { direction: _omit, ...bodyWithoutDirection } = validBody;
+    const res = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send(bodyWithoutDirection);
+
+    expect(res.status).toBe(400);
+  });
+});
