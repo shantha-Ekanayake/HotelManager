@@ -63,6 +63,13 @@ let mutationOnSuccess: ((data: any) => void) | undefined;
  */
 let mockPropertiesResponseData: { properties: any[] } | undefined = undefined;
 
+/**
+ * Controls what the folio/reservation query returns.
+ * When undefined the mock falls back to DEFAULT_FOLIO_QUERY_DATA.
+ * Set this before a test to inject a custom folio (e.g. partial payment).
+ */
+let mockFolioQueryData: typeof DEFAULT_FOLIO_QUERY_DATA | undefined = undefined;
+
 const DEFAULT_FOLIO_QUERY_DATA = {
   reservation: {
     id: "res-1",
@@ -112,7 +119,7 @@ vi.mock("@tanstack/react-query", () => ({
     if (typeof key === "string" && key === "/api/properties") {
       return { data: mockPropertiesResponseData, isLoading: false };
     }
-    return { data: DEFAULT_FOLIO_QUERY_DATA, isLoading: false };
+    return { data: mockFolioQueryData ?? DEFAULT_FOLIO_QUERY_DATA, isLoading: false };
   }),
   useMutation: vi.fn((opts: any) => {
     mutationOnSuccess = opts.onSuccess;
@@ -538,5 +545,114 @@ describe("CheckOutForm – receipt uses real property name and address from /api
     await renderAndCheckOutWithProperty(undefined);
     fireEvent.click(screen.getByTestId("button-print-receipt-success"));
     expect(capturedHtml).toContain("Hotel Management System");
+  });
+});
+
+// ── CheckOutForm – partial-payment balance passed to the receipt ───────────────
+//
+// These tests confirm that when a folio has charges > payments the balance
+// calculation inside CheckOutForm is correct and flows through to printReceipt
+// so the receipt HTML shows "Balance Due" and the exact outstanding amount.
+
+describe("CheckOutForm – partial payment balance in receipt", () => {
+  const PARTIAL_FOLIO_DATA = {
+    reservation: {
+      id: "res-1",
+      confirmationNumber: "CONF-9001",
+      guestId: "guest-1",
+      roomId: "202",
+      arrivalDate: new Date("2026-07-20"),
+      departureDate: new Date("2026-07-26"),
+      nights: 6,
+      totalAmount: "900.00",
+      status: "checked_in",
+      propertyId: "prop-demo",
+    },
+    folio: {
+      id: "folio-1",
+      // charges: 750 + 150 = 900
+      charges: [
+        { id: "c1", description: "Room Charge", amount: "750.00" },
+        { id: "c2", description: "Mini Bar", amount: "150.00" },
+      ],
+      // payments: 850 → balance = 900 − 850 = 50
+      payments: [
+        {
+          id: "p1",
+          paymentMethod: "credit_card",
+          amount: "850.00",
+          paymentDate: new Date("2026-07-26"),
+        },
+      ],
+    },
+  } as typeof DEFAULT_FOLIO_QUERY_DATA;
+
+  beforeEach(() => {
+    mockMutate.mockReset();
+    mutationOnSuccess = undefined;
+    mockPropertiesResponseData = undefined;
+    mockFolioQueryData = PARTIAL_FOLIO_DATA;
+    resetWindowMock();
+  });
+
+  afterEach(() => {
+    mockPropertiesResponseData = undefined;
+    mockFolioQueryData = undefined;
+    openSpy.mockReset();
+  });
+
+  // ── form-level button ──────────────────────────────────────────────────────
+
+  it("form-level button: receipt contains 'Balance Due' label for a partial payment", () => {
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    expect(capturedHtml).toContain("Balance Due");
+  });
+
+  it("form-level button: receipt shows the correct outstanding amount (Rs 50.00)", () => {
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    // totalCharges = 900, totalPayments = 850 → balance = 50
+    expect(capturedHtml).toContain("Rs 50.00");
+  });
+
+  it("form-level button: receipt carries the balance-due CSS class for a partial payment", () => {
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    expect(capturedHtml).toContain('class="balance-due"');
+  });
+
+  it("form-level button: receipt does NOT show 'balance-clear' class for a partial payment", () => {
+    render(<CheckOutForm reservationId="res-1" />);
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    expect(capturedHtml).not.toContain('class="balance-clear"');
+  });
+
+  // ── success-panel button ───────────────────────────────────────────────────
+
+  async function renderAndCheckOutPartial() {
+    render(<CheckOutForm reservationId="res-1" />);
+    mutationOnSuccess?.({ reservation: { status: "checked_out" }, emailStatus: "sent" });
+    await waitFor(() =>
+      expect(screen.getByTestId("button-print-receipt-success")).toBeInTheDocument()
+    );
+  }
+
+  it("success-panel button: receipt contains 'Balance Due' label for a partial payment", async () => {
+    await renderAndCheckOutPartial();
+    fireEvent.click(screen.getByTestId("button-print-receipt-success"));
+    expect(capturedHtml).toContain("Balance Due");
+  });
+
+  it("success-panel button: receipt shows the correct outstanding amount (Rs 50.00)", async () => {
+    await renderAndCheckOutPartial();
+    fireEvent.click(screen.getByTestId("button-print-receipt-success"));
+    expect(capturedHtml).toContain("Rs 50.00");
+  });
+
+  it("success-panel button: receipt carries the balance-due CSS class for a partial payment", async () => {
+    await renderAndCheckOutPartial();
+    fireEvent.click(screen.getByTestId("button-print-receipt-success"));
+    expect(capturedHtml).toContain('class="balance-due"');
   });
 });
