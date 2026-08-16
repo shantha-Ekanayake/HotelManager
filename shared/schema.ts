@@ -457,7 +457,9 @@ export const insertUserSchema = createInsertSchema(users).omit({
   updatedAt: true
 });
 
-export const insertRoomTypeSchema = createInsertSchema(roomTypes).omit({
+export const insertRoomTypeSchema = createInsertSchema(roomTypes, {
+  amenities: z.array(z.string()).optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true

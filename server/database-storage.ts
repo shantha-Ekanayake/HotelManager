@@ -411,14 +411,15 @@ export class DatabaseStorage implements IHMSStorage {
   }
 
   async createRoomType(roomType: InsertRoomType): Promise<RoomType> {
-    const insertData: any = roomType;
-    const result = await db.insert(roomTypes).values(insertData).returning();
+    const result = await db.insert(roomTypes).values(roomType).returning();
     return result[0];
   }
 
   async updateRoomType(id: string, roomType: Partial<InsertRoomType>): Promise<RoomType> {
-    const updateData: any = { ...roomType, updatedAt: new Date() };
-    const result = await db.update(roomTypes).set(updateData).where(eq(roomTypes.id, id)).returning();
+    const result = await db.update(roomTypes).set({
+      ...roomType,
+      updatedAt: new Date()
+    }).where(eq(roomTypes.id, id)).returning();
     return result[0];
   }
 
