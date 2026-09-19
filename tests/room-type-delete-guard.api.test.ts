@@ -115,6 +115,25 @@ describe("DELETE /api/room-types/:id — referencing-room guard", () => {
     expect(res.body.error).toMatch(/existing room/i);
   });
 
+  it("returns 409 after a referencing room is deactivated then reactivated", async () => {
+    const roomType = await makeRoomType("with-reactivated-room");
+    const room = await makeRoom(roomType.id, true);
+
+    const inactiveRoom = await memStorage.updateRoom(room.id, { isActive: false });
+    expect(inactiveRoom.isActive).toBe(false);
+
+    const reactivatedRoom = await memStorage.updateRoom(room.id, { isActive: true });
+    expect(reactivatedRoom.isActive).toBe(true);
+
+    const res = await request(app)
+      .delete(`/api/room-types/${roomType.id}`)
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/existing room/i);
+    expect(res.body.details).toMatch(/1 room/i);
+  });
+
   it("allows deleting a room type that has no rooms at all", async () => {
     const roomType = await makeRoomType("no-rooms");
 
