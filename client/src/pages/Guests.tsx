@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, invalidateGuestQueries } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
@@ -199,9 +199,10 @@ export default function Guests() {
     onSuccess: () => {
       toast({ title: "Guest updated successfully" });
       setShowEditDialog(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
       if (selectedGuest) {
-        queryClient.invalidateQueries({ queryKey: ["/api/guests", selectedGuest.id, "profile"] });
+        invalidateGuestQueries(selectedGuest.id);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
       }
     },
     onError: (error: any) => {

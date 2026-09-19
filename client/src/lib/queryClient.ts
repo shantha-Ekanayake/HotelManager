@@ -75,3 +75,11 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+export const guestQueryKey = (guestId: string | undefined) =>
+  ["/api/guests", guestId] as const;
+
+export function invalidateGuestQueries(guestId: string): void {
+  queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
+  queryClient.invalidateQueries({ queryKey: guestQueryKey(guestId) });
+}

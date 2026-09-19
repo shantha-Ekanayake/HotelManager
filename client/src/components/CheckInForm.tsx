@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Calendar, Clock, User, CreditCard, KeyRound, Phone, Mail, Loader2, ShieldCheck, PenLine, CheckCircle2, Printer, Send, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, guestQueryKey, queryClient } from "@/lib/queryClient";
 import type { Reservation, Guest, Room, Property } from "@shared/schema";
 import SignaturePad from "./SignaturePad";
 import { printRegistrationCard, buildPropertyCardFields, buildGuestCardFields } from "./RegistrationCardPrint";
@@ -57,7 +57,7 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
   });
 
   const { data: guestData, isLoading: guestLoading } = useQuery<{ guest: Guest }>({
-    queryKey: ["/api/guests", reservation?.reservation?.guestId],
+    queryKey: guestQueryKey(reservation?.reservation?.guestId),
     enabled: !!reservation?.reservation?.guestId
   });
 

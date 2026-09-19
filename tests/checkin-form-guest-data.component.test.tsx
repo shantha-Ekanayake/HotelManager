@@ -24,11 +24,27 @@
  * buildRegistrationCardHtml() are pure functions.
  */
 
-import { describe, it, expect } from "vitest";
+// @vitest-environment jsdom
+
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   buildGuestCardFields,
   buildRegistrationCardHtml,
 } from "../client/src/components/RegistrationCardPrint.js";
+import {
+  guestQueryKey,
+  invalidateGuestQueries,
+  queryClient,
+} from "../client/src/lib/queryClient.js";
+import CheckInForm from "../client/src/components/CheckInForm.js";
+
+vi.mock("../client/src/components/SignaturePad.js", () => ({
+  default: () => <div data-testid="mock-signature-pad" />,
+}));
 
 // ── Guest fixtures ─────────────────────────────────────────────────────────────
 //
@@ -264,5 +280,143 @@ describe("Registration card HTML – correct guest data flows through to printed
     const guestFields = buildGuestCardFields(undefined);
     const html = buildRegistrationCardHtml({ ...BASE_RESERVATION_FIELDS, ...guestFields });
     expect(html).toContain("Guest");
+  });
+});
+
+describe("Registration card guest reassignment", () => {
+  it("uses the newly assigned guest's cache entry instead of the original guest", () => {
+    const cache = new QueryClient();
+    cache.setQueryData(guestQueryKey("guest-a"), { guest: GUEST_A });
+    cache.setQueryData(guestQueryKey("guest-b"), { guest: GUEST_B });
+
+    const reservation = { guestId: "guest-a" };
+    reservation.guestId = "guest-b";
+
+    const reassignedGuest = cache.getQueryData<{ guest: typeof GUEST_B }>(
+      guestQueryKey(reservation.guestId),
+    )?.guest;
+    const guestFields = buildGuestCardFields(reassignedGuest);
+    const html = buildRegistrationCardHtml({
+      ...BASE_RESERVATION_FIELDS,
+      ...guestFields,
+    });
+
+    expect(html).toContain("Bob Kaminski");
+    expect(html).toContain("bob.kaminski@example.com");
+    expect(html).not.toContain("Alice Nguyen");
+    expect(html).not.toContain("alice.nguyen@example.com");
+  });
+
+  it("invalidates the guest detail cache after a guest update", () => {
+    const invalidateSpy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockResolvedValue(undefined);
+
+    invalidateGuestQueries("guest-b");
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: guestQueryKey("guest-b"),
+    });
+    invalidateSpy.mockRestore();
+  });
+});
+
+describe("CheckInForm registration card after guest reassignment", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("prints Guest B after the reservation changes from Guest A to Guest B", async () => {
+    let assignedGuestId = "guest-a";
+    let printedHtml = "";
+    Element.prototype.scrollIntoView = vi.fn();
+
+    const popupDocument = {
+      write: vi.fn((html: string) => {
+        printedHtml += html;
+      }),
+      close: vi.fn(),
+    };
+    vi.spyOn(window, "open").mockReturnValue({
+      document: popupDocument,
+      focus: vi.fn(),
+      print: vi.fn(),
+      onload: null,
+    } as unknown as Window);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ emailStatus: "sent" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const reservationResponse = () => ({
+      reservation: {
+        id: "reservation-1",
+        guestId: assignedGuestId,
+        confirmationNumber: "CONF-REASSIGNED",
+        arrivalDate: "2026-08-01",
+        departureDate: "2026-08-05",
+        nights: 4,
+        totalAmount: "600.00",
+      },
+    });
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          queryFn: async ({ queryKey }) => {
+            if (queryKey[0] === "/api/reservations") return reservationResponse();
+            if (queryKey[0] === "/api/guests") {
+              return { guest: queryKey[1] === "guest-a" ? GUEST_A : GUEST_B };
+            }
+            if (queryKey[0] === "/api/front-desk/available-rooms") {
+              return {
+                rooms: [{ id: "room-1", roomNumber: "204", status: "clean" }],
+              };
+            }
+            if (queryKey[0] === "/api/properties") {
+              return { properties: [{ name: "Grand Test Hotel" }] };
+            }
+            throw new Error(`Unexpected query key: ${queryKey.join("/")}`);
+          },
+        },
+        mutations: { retry: false },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <CheckInForm reservationId="reservation-1" />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByDisplayValue("Alice")).toBeInTheDocument();
+
+    assignedGuestId = "guest-b";
+    await client.invalidateQueries({
+      queryKey: ["/api/reservations", "reservation-1"],
+    });
+
+    expect(await screen.findByDisplayValue("Bob")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Alice")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("select-room-number"));
+    const roomOptions = await screen.findAllByText("Room 204 - clean");
+    fireEvent.click(roomOptions.at(-1)!);
+    fireEvent.click(screen.getByTestId("button-complete-checkin"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("button-print-registration-card")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("button-print-registration-card"));
+
+    expect(printedHtml).toContain("Bob Kaminski");
+    expect(printedHtml).toContain("bob.kaminski@example.com");
+    expect(printedHtml).not.toContain("Alice Nguyen");
+    expect(printedHtml).not.toContain("alice.nguyen@example.com");
   });
 });
