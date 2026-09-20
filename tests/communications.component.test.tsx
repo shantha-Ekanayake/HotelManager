@@ -124,13 +124,15 @@ import Guests from "../client/src/pages/Guests.js";
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 async function renderAndSelectGuest() {
-  render(<Guests />);
+  const renderResult = render(<Guests />);
 
   // Click the guest card to select the guest and reveal the detail panel.
   // Because the Tabs component is mocked to always render all panel content,
   // no further tab-click navigation is required.
   const guestCard = await screen.findByTestId(`card-guest-${DEMO_GUEST.id}`);
   fireEvent.click(guestCard);
+
+  return renderResult;
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -266,6 +268,26 @@ describe("Guests communications tab — badge-failed-email-count", () => {
       const badge = screen.getByTestId("badge-failed-email-count");
       expect(badge).toBeInTheDocument();
       expect(badge).toHaveTextContent("2 failed");
+    });
+  });
+
+  it("removes badge-failed-email-count after the failed communication is deleted", async () => {
+    communicationsPayload = { communications: [FAILED_COMM_A] };
+    const { rerender } = await renderAndSelectGuest();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-failed-email-count")).toHaveTextContent(
+        "1 failed"
+      );
+    });
+
+    communicationsPayload = { communications: [] };
+    rerender(<Guests />);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("badge-failed-email-count")
+      ).not.toBeInTheDocument();
     });
   });
 
