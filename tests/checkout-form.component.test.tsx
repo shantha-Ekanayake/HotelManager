@@ -15,8 +15,13 @@
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
+
+const { mockApiRequest, mockToast } = vi.hoisted(() => ({
+  mockApiRequest: vi.fn(),
+  mockToast: vi.fn(),
+}));
 
 // ── mock tanstack react-query ─────────────────────────────────────────────────
 const mockMutate = vi.fn();
@@ -82,13 +87,13 @@ vi.mock("@tanstack/react-query", () => ({
 
 // ── mock queryClient module ───────────────────────────────────────────────────
 vi.mock("@/lib/queryClient", () => ({
-  apiRequest: vi.fn().mockResolvedValue({}),
+  apiRequest: mockApiRequest,
   queryClient: { invalidateQueries: vi.fn() },
 }));
 
 // ── mock toast ────────────────────────────────────────────────────────────────
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }));
 
 // ── import the component under test ──────────────────────────────────────────
@@ -99,6 +104,8 @@ import CheckOutForm from "../client/src/components/CheckOutForm.js";
 describe("CheckOutForm – success panel", () => {
   beforeEach(() => {
     mockMutate.mockReset();
+    mockApiRequest.mockReset();
+    mockToast.mockReset();
     mutationOnSuccess = undefined;
     useGuestWithNoEmail = false;
   });
@@ -188,5 +195,54 @@ describe("CheckOutForm – success panel", () => {
     expect(
       screen.queryByText(/A departure receipt was emailed/i)
     ).not.toBeInTheDocument();
+  });
+
+  it("does not show 'Email Sent' when a resend is skipped", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      json: vi.fn().mockResolvedValue({
+        success: true,
+        emailStatus: "skipped",
+        message: "Guest has no email address — receipt not sent",
+      }),
+    });
+
+    render(<CheckOutForm reservationId="res-1" />);
+    mutationOnSuccess?.({ reservation: { status: "checked_out" } });
+
+    const resendButton = await screen.findByTestId("button-resend-receipt-email");
+    fireEvent.click(resendButton);
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Email Not Sent",
+        description: "Guest has no email address — receipt not sent",
+      });
+    });
+    expect(mockToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Email Sent" }),
+    );
+  });
+
+  it("still shows 'Email Sent' when a resend succeeds", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      json: vi.fn().mockResolvedValue({
+        success: true,
+        emailStatus: "sent",
+        message: "Check-out receipt email sent",
+      }),
+    });
+
+    render(<CheckOutForm reservationId="res-1" />);
+    mutationOnSuccess?.({ reservation: { status: "checked_out" } });
+
+    const resendButton = await screen.findByTestId("button-resend-receipt-email");
+    fireEvent.click(resendButton);
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Email Sent",
+        description: "Departure receipt has been resent to the guest.",
+      });
+    });
   });
 });

@@ -469,7 +469,11 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
 
     // Endpoint must succeed — missing email is a silent skip, not an error
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ success: true });
+    expect(res.body).toMatchObject({
+      success: true,
+      message: "Guest has no email address — receipt not sent",
+      emailStatus: "skipped",
+    });
 
     // sendCheckOutEmail must have been called exactly once
     expect(mockSendCheckOutEmail).toHaveBeenCalledTimes(1);

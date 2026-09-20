@@ -127,7 +127,15 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
     setResendLoading(true);
     setResendFailed(false);
     try {
-      await apiRequest("POST", `/api/reservations/${reservationId}/send-checkout-email`, {});
+      const response = await apiRequest("POST", `/api/reservations/${reservationId}/send-checkout-email`, {});
+      const result = await response.json();
+      if (result.emailStatus === "skipped") {
+        toast({
+          title: "Email Not Sent",
+          description: result.message || "The departure receipt email was not sent.",
+        });
+        return;
+      }
       toast({
         title: "Email Sent",
         description: "Departure receipt has been resent to the guest.",

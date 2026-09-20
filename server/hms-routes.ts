@@ -1624,6 +1624,15 @@ export function registerReservationRoutes(app: Express) {
           }
           return res.status(502).json({ error: "Email service failed to deliver the message", emailStatus: "failed" });
         }
+        if (emailStatus === "skipped") {
+          return res.json({
+            success: true,
+            message: guest.email
+              ? "Receipt email was not sent"
+              : "Guest has no email address — receipt not sent",
+            emailStatus
+          });
+        }
         res.json({ success: true, message: "Check-out receipt email sent", emailStatus });
       } catch (error: any) {
         console.error("Resend check-out email error:", error);
