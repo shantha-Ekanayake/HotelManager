@@ -525,6 +525,27 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
     expect(failureEntry?.subject).toMatch(/departure receipt resend/i);
   });
 
+  it("still returns 502 when sendCheckOutEmail returns 'failed' and recording the failure throws", async () => {
+    mockSendCheckOutEmail.mockClear();
+    mockSendCheckOutEmail.mockResolvedValueOnce("failed");
+    const communicationSpy = vi
+      .spyOn(memStorage, "createGuestCommunication")
+      .mockRejectedValueOnce(new Error("Communication log unavailable"));
+
+    try {
+      const res = await request(app)
+        .post(`/api/reservations/${testReservationId}/send-checkout-email`)
+        .set("Authorization", authHeader)
+        .send({});
+
+      expect(res.status).toBe(502);
+      expect(res.body).toMatchObject({ emailStatus: "failed" });
+      expect(communicationSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      communicationSpy.mockRestore();
+    }
+  });
+
   it("returns 500 and records a failure communication when sendCheckOutEmail throws", async () => {
     mockSendCheckOutEmail.mockClear();
     mockSendCheckOutEmail.mockRejectedValueOnce(new Error("SMTP connection refused"));
@@ -547,5 +568,26 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
         c.content.includes("SMTP connection refused")
     );
     expect(failureEntry).toBeDefined();
+  });
+
+  it("still returns 500 when sendCheckOutEmail and recording the failure both throw", async () => {
+    mockSendCheckOutEmail.mockClear();
+    mockSendCheckOutEmail.mockRejectedValueOnce(new Error("SMTP connection refused"));
+    const communicationSpy = vi
+      .spyOn(memStorage, "createGuestCommunication")
+      .mockRejectedValueOnce(new Error("Communication log unavailable"));
+
+    try {
+      const res = await request(app)
+        .post(`/api/reservations/${testReservationId}/send-checkout-email`)
+        .set("Authorization", authHeader)
+        .send({});
+
+      expect(res.status).toBe(500);
+      expect(res.body).toMatchObject({ error: "Failed to send email" });
+      expect(communicationSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      communicationSpy.mockRestore();
+    }
   });
 });
