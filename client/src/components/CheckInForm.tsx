@@ -14,7 +14,12 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, guestQueryKey, queryClient } from "@/lib/queryClient";
 import type { Reservation, Guest, Room, Property } from "@shared/schema";
 import SignaturePad from "./SignaturePad";
-import { printRegistrationCard, buildPropertyCardFields, buildGuestCardFields } from "./RegistrationCardPrint";
+import {
+  printRegistrationCard,
+  buildPropertyCardFields,
+  buildGuestCardFields,
+  resolveRegistrationCardRoomNumber,
+} from "./RegistrationCardPrint";
 
 interface CheckInFormProps {
   reservationId?: string;
@@ -144,14 +149,13 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
   const handlePrintCard = () => {
     const res = reservation?.reservation;
     const g = guestData?.guest;
-    const room = availableRoomsData?.rooms.find(r => r.id === selectedRoomId);
     const property = propertiesData?.properties?.[0];
     const propertyFields = buildPropertyCardFields(property);
 
     const guestFields = buildGuestCardFields(g, idVerification);
     printRegistrationCard({
       ...guestFields,
-      roomNumber: room?.roomNumber || selectedRoomId,
+      roomNumber: resolveRegistrationCardRoomNumber(availableRoomsData?.rooms, selectedRoomId),
       confirmationNumber: res?.confirmationNumber || "—",
       checkInDate: res?.arrivalDate ? new Date(res.arrivalDate).toLocaleDateString() : "—",
       checkOutDate: res?.departureDate ? new Date(res.departureDate).toLocaleDateString() : "—",

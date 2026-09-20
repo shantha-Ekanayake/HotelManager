@@ -34,6 +34,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   buildGuestCardFields,
   buildRegistrationCardHtml,
+  resolveRegistrationCardRoomNumber,
 } from "../client/src/components/RegistrationCardPrint.js";
 import {
   guestQueryKey,
@@ -283,6 +284,37 @@ describe("Registration card HTML – correct guest data flows through to printed
   });
 });
 
+describe("Registration card HTML – selected room number", () => {
+  const selectedRoomId = "3d624ad7-85a1-4281-9ea6-a4939c34e7a2";
+  const availableRooms = [
+    { id: "other-room-id", roomNumber: "204" },
+    { id: selectedRoomId, roomNumber: "418" },
+  ];
+
+  it("prints the human-readable number for the newly selected room, not its raw ID", () => {
+    const roomNumber = resolveRegistrationCardRoomNumber(availableRooms, selectedRoomId);
+    const html = buildRegistrationCardHtml({
+      ...BASE_RESERVATION_FIELDS,
+      ...buildGuestCardFields(GUEST_A),
+      roomNumber,
+    });
+
+    expect(html).toContain('<div class="field-value">418</div>');
+    expect(html).not.toContain(selectedRoomId);
+  });
+
+  it("prints the raw selected room ID when the available-room lookup has no match", () => {
+    const roomNumber = resolveRegistrationCardRoomNumber(availableRooms, "missing-room-id");
+    const html = buildRegistrationCardHtml({
+      ...BASE_RESERVATION_FIELDS,
+      ...buildGuestCardFields(GUEST_A),
+      roomNumber,
+    });
+
+    expect(html).toContain('<div class="field-value">missing-room-id</div>');
+  });
+});
+
 describe("Registration card guest reassignment", () => {
   it("uses the newly assigned guest's cache entry instead of the original guest", () => {
     const cache = new QueryClient();
@@ -375,7 +407,10 @@ describe("CheckInForm registration card after guest reassignment", () => {
             }
             if (queryKey[0] === "/api/front-desk/available-rooms") {
               return {
-                rooms: [{ id: "room-1", roomNumber: "204", status: "clean" }],
+                rooms: [
+                  { id: "room-1", roomNumber: "204", status: "clean" },
+                  { id: "room-2", roomNumber: "418", status: "clean" },
+                ],
               };
             }
             if (queryKey[0] === "/api/properties") {
@@ -405,8 +440,12 @@ describe("CheckInForm registration card after guest reassignment", () => {
     expect(screen.queryByDisplayValue("Alice")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("select-room-number"));
-    const roomOptions = await screen.findAllByText("Room 204 - clean");
-    fireEvent.click(roomOptions.at(-1)!);
+    const originalRoomOptions = await screen.findAllByText("Room 204 - clean");
+    fireEvent.click(originalRoomOptions.at(-1)!);
+
+    fireEvent.click(screen.getByTestId("select-room-number"));
+    const changedRoomOptions = await screen.findAllByText("Room 418 - clean");
+    fireEvent.click(changedRoomOptions.at(-1)!);
     fireEvent.click(screen.getByTestId("button-complete-checkin"));
 
     await waitFor(() => {
@@ -418,5 +457,9 @@ describe("CheckInForm registration card after guest reassignment", () => {
     expect(printedHtml).toContain("bob.kaminski@example.com");
     expect(printedHtml).not.toContain("Alice Nguyen");
     expect(printedHtml).not.toContain("alice.nguyen@example.com");
+    expect(printedHtml).toContain('<div class="field-value">418</div>');
+    expect(printedHtml).not.toContain('<div class="field-value">204</div>');
+    expect(printedHtml).not.toContain("room-1");
+    expect(printedHtml).not.toContain("room-2");
   });
 });

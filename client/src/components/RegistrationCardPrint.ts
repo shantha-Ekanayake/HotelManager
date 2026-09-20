@@ -50,6 +50,14 @@ export interface GuestCardFields {
   nationality: string | null | undefined;
 }
 
+/** Resolve the printable room number for the room currently selected at check-in. */
+export function resolveRegistrationCardRoomNumber(
+  rooms: ReadonlyArray<{ id: string; roomNumber: string | null | undefined }> | undefined,
+  selectedRoomId: string,
+): string {
+  return rooms?.find((room) => room.id === selectedRoomId)?.roomNumber || selectedRoomId;
+}
+
 /**
  * Map a guest record and any in-form ID-verification overrides into the guest
  * fields needed by printRegistrationCard.
