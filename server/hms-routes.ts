@@ -10,6 +10,7 @@ import {
   canAccessProperty,
   login, 
   hashPassword,
+  authenticateCommunicationWriter,
   type AuthRequest 
 } from "./auth";
 import {
@@ -958,8 +959,7 @@ export function registerGuestRoutes(app: Express) {
 
   // Add guest communication
   app.post("/api/guests/:id/communications",
-    authenticate,
-    authorize("guests.manage"),
+    authenticateCommunicationWriter,
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;

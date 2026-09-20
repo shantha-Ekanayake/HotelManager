@@ -17,7 +17,10 @@ vi.mock("../server/storage.js", () => ({ storage: memStorage }));
 import express from "express";
 import request from "supertest";
 import { registerHMSRoutes } from "../server/hms-routes.js";
-import { generateToken } from "../server/auth.js";
+import {
+  generateCommunicationServiceToken,
+  generateToken,
+} from "../server/auth.js";
 import type { User } from "../shared/schema.js";
 
 // ── shared Express app ────────────────────────────────────────────────────────
@@ -161,6 +164,70 @@ describe("POST /api/guests/:id/communications — save new entry", () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty("communication");
+    expect(res.body.communication.staffId).toBe(FRONTDESK_USER.id);
+  });
+
+  it("saves with a null staffId when the service token user is absent from storage", async () => {
+    const res = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set(
+        "Authorization",
+        `Bearer ${generateCommunicationServiceToken("system-communications")}`
+      )
+      .send(validBody);
+
+    expect(res.status).toBe(201);
+    expect(res.body.communication).toHaveProperty("staffId", null);
+  });
+
+  it("rejects a normal staff token when its user is absent from storage", async () => {
+    const deletedUserToken = generateToken({
+      ...FRONTDESK_USER,
+      id: "deleted-user",
+    });
+
+    const res = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", `Bearer ${deletedUserToken}`)
+      .send(validBody);
+
+    expect(res.status).toBe(401);
+  });
+
+  it("uses the stored role when a staff user's permissions have changed", async () => {
+    const getUserSpy = vi.spyOn(memStorage, "getUser").mockResolvedValueOnce({
+      ...FRONTDESK_USER,
+      role: "auditor",
+    });
+
+    try {
+      const res = await request(app)
+        .post(`/api/guests/${guestId}/communications`)
+        .set("Authorization", authHeader)
+        .send(validBody);
+
+      expect(res.status).toBe(403);
+    } finally {
+      getUserSpy.mockRestore();
+    }
+  });
+
+  it("rejects an inactive stored user", async () => {
+    const getUserSpy = vi.spyOn(memStorage, "getUser").mockResolvedValueOnce({
+      ...FRONTDESK_USER,
+      isActive: false,
+    });
+
+    try {
+      const res = await request(app)
+        .post(`/api/guests/${guestId}/communications`)
+        .set("Authorization", authHeader)
+        .send(validBody);
+
+      expect(res.status).toBe(401);
+    } finally {
+      getUserSpy.mockRestore();
+    }
   });
 
   it("returned record contains all expected fields", async () => {

@@ -142,6 +142,18 @@ export function generateToken(user: User): string {
   );
 }
 
+export function generateCommunicationServiceToken(serviceId: string): string {
+  return jwt.sign(
+    {
+      userId: serviceId,
+      actorType: "communication_service",
+      scope: "guest_communications.write",
+    },
+    jwtSecret,
+    { expiresIn: "5m" }
+  );
+}
+
 // Verify JWT token
 export function verifyToken(token: string): any {
   try {
@@ -176,6 +188,24 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   } catch (error) {
     return res.status(401).json({ error: "Authentication failed" });
   }
+}
+
+export async function authenticateCommunicationWriter(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  const token = req.headers.authorization?.split(" ")[1];
+  const decoded = token ? verifyToken(token) : null;
+
+  if (
+    decoded?.actorType === "communication_service" &&
+    decoded.scope === "guest_communications.write"
+  ) {
+    return next();
+  }
+
+  return authenticate(req, res, () => authorize("guests.manage")(req, res, next));
 }
 
 // Check if user has specific permission
