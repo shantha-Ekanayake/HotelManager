@@ -320,6 +320,9 @@ test.describe("express check-out: outstanding-balance rejection (API)", () => {
   let testRoomId: string | null = null;
   let testGuestId: string | null = null;
   let testReservationId: string | null = null;
+  let postChargeRoomId: string | null = null;
+  let postChargeReservationId: string | null = null;
+  let postChargeFolioId: string | null = null;
 
   // ── setup ────────────────────────────────────────────────────────────────
   test.beforeAll(async () => {
@@ -445,6 +448,74 @@ test.describe("express check-out: outstanding-balance rejection (API)", () => {
           },
         });
       }
+
+      // 7. Create a second room and zero-balance reservation for the
+      //    post-check-in charge regression case.
+      if (testRoomTypeId) {
+        const roomRes = await ctx.post(
+          `/api/properties/${auth.propertyId}/rooms`,
+          {
+            data: {
+              roomTypeId: testRoomTypeId,
+              roomNumber: `E2E-BAL-POST-${suffix}`,
+              floor: 9,
+              status: "available",
+              isActive: true,
+            },
+          }
+        );
+        if (roomRes.ok()) postChargeRoomId = (await roomRes.json()).room?.id ?? null;
+      }
+
+      if (testRoomTypeId && testRatePlanId && testGuestId) {
+        const today = new Date().toISOString().split("T")[0];
+        const yesterday = new Date(Date.now() - 86_400_000)
+          .toISOString()
+          .split("T")[0];
+
+        const resRes = await ctx.post("/api/reservations", {
+          data: {
+            propertyId: auth.propertyId,
+            guestId: testGuestId,
+            roomTypeId: testRoomTypeId,
+            ratePlanId: testRatePlanId,
+            status: "confirmed",
+            arrivalDate: yesterday,
+            departureDate: today,
+            nights: 1,
+            adults: 1,
+            children: 0,
+            totalAmount: "0",
+            notes: "E2E_EXPRESS_CHECKOUT_POST_CHECKIN_CHARGE",
+          },
+        });
+        if (resRes.ok()) {
+          postChargeReservationId = (await resRes.json()).reservation?.id ?? null;
+        }
+      }
+
+      if (postChargeReservationId && postChargeRoomId) {
+        const checkInRes = await ctx.post(
+          `/api/reservations/${postChargeReservationId}/check-in`,
+          {
+            data: {
+              roomId: postChargeRoomId,
+              idType: "passport",
+              idNumber: "PW000100",
+              nationality: "British",
+              signature: "data:image/png;base64,iVBORw0KGgo=",
+            },
+          }
+        );
+        if (checkInRes.ok()) {
+          const folioRes = await ctx.get(
+            `/api/reservations/${postChargeReservationId}/folio`
+          );
+          if (folioRes.ok()) {
+            postChargeFolioId = (await folioRes.json()).folio?.id ?? null;
+          }
+        }
+      }
     } finally {
       await ctx.dispose();
     }
@@ -458,7 +529,11 @@ test.describe("express check-out: outstanding-balance rejection (API)", () => {
       extraHTTPHeaders: { Authorization: `Bearer ${auth.token}` },
     });
     try {
+      if (postChargeReservationId) {
+        await ctx.delete(`/api/reservations/${postChargeReservationId}`);
+      }
       if (testReservationId) await ctx.delete(`/api/reservations/${testReservationId}`);
+      if (postChargeRoomId)   await ctx.delete(`/api/rooms/${postChargeRoomId}`);
       if (testRoomId)        await ctx.delete(`/api/rooms/${testRoomId}`);
       if (testRoomTypeId)    await ctx.delete(`/api/room-types/${testRoomTypeId}`);
       if (testRatePlanId)    await ctx.delete(`/api/rate-plans/${testRatePlanId}`);
@@ -499,6 +574,46 @@ test.describe("express check-out: outstanding-balance rejection (API)", () => {
         typeof body.error === "string" &&
           body.error.toLowerCase().includes("balance")
       ).toBe(true);
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
+  test("rejects express checkout when a folio charge is added after check-in", async () => {
+    if (!auth) {
+      test.skip(true, "No known user credentials in this DB — seed the DB first.");
+      return;
+    }
+    if (!postChargeReservationId || !postChargeFolioId) {
+      test.skip(true, "Zero-balance fixture could not be checked in or its folio was not created.");
+      return;
+    }
+
+    const ctx = await apiRequest.newContext({
+      baseURL: "http://localhost:5000",
+      extraHTTPHeaders: { Authorization: `Bearer ${auth.token}` },
+    });
+    try {
+      const chargeRes = await ctx.post("/api/charges", {
+        data: {
+          folioId: postChargeFolioId,
+          chargeCode: "MINIBAR",
+          description: "Post-check-in minibar charge",
+          amount: "25.00",
+          taxAmount: "0",
+          totalAmount: "25.00",
+        },
+      });
+      expect(chargeRes.status()).toBe(201);
+
+      const checkoutRes = await ctx.post(
+        `/api/reservations/${postChargeReservationId}/express-checkout`,
+        { data: {} }
+      );
+
+      expect(checkoutRes.status()).toBe(400);
+      const body = await checkoutRes.json();
+      expect(body.error).toEqual(expect.stringContaining("balance"));
     } finally {
       await ctx.dispose();
     }
