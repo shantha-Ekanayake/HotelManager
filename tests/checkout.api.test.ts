@@ -461,6 +461,7 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
     mockSendCheckOutEmail.mockClear();
     // Real service returns "skipped" when guest has no email — reflect that here
     mockSendCheckOutEmail.mockResolvedValueOnce("skipped");
+    const commsBefore = await memStorage.getGuestCommunications(noEmailGuest.id);
 
     const res = await request(app)
       .post(`/api/reservations/${noEmailReservation.id}/send-checkout-email`)
@@ -483,6 +484,21 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
     expect(guestArg.email).toBeFalsy();
     expect(guestArg.firstName).toBe("Resend");
     expect(guestArg.lastName).toBe("NoEmail");
+
+    const commsAfter = await memStorage.getGuestCommunications(noEmailGuest.id);
+    expect(commsAfter).toHaveLength(commsBefore.length + 1);
+    const skippedEntry = commsAfter.find(
+      (c: { subject: string | null }) => c.subject?.includes("[SKIPPED]")
+    );
+    expect(skippedEntry).toMatchObject({
+      guestId: noEmailGuest.id,
+      type: "email",
+      direction: "outbound",
+      staffId: FRONTDESK_USER.id,
+    });
+    expect(skippedEntry?.subject).toMatch(/departure receipt resend/i);
+    expect(skippedEntry?.subject).not.toContain("[FAILED]");
+    expect(skippedEntry?.content).toMatch(/no email address/i);
   });
 
   it("returns 502 and records a failure communication when sendCheckOutEmail returns 'failed'", async () => {
