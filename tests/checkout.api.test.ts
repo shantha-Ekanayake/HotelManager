@@ -519,7 +519,7 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
     const commsAfter = await memStorage.getGuestCommunications(testGuestId);
     expect(commsAfter.length).toBeGreaterThan(commsBefore.length);
     const failureEntry = commsAfter.find(
-      (c: { subject: string }) => c.subject.includes("[FAILED]")
+      (c: { status?: string }) => c.status === "failed"
     );
     expect(failureEntry).toBeDefined();
     expect(failureEntry?.subject).toMatch(/departure receipt resend/i);
@@ -542,8 +542,8 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
     const commsAfter = await memStorage.getGuestCommunications(testGuestId);
     expect(commsAfter.length).toBeGreaterThan(commsBefore.length);
     const failureEntry = commsAfter.find(
-      (c: { subject: string; content: string }) =>
-        c.subject.includes("[FAILED]") &&
+      (c: { status?: string; content: string }) =>
+        c.status === "failed" &&
         c.content.includes("SMTP connection refused")
     );
     expect(failureEntry).toBeDefined();

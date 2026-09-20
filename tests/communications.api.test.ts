@@ -4,8 +4,8 @@
  * Strategy: swap the real database storage for the in-memory MemStorage so
  * tests run without any Postgres connection.  Two scenarios are covered:
  *   1. A guest with zero communications returns an empty array — not a crash.
- *   2. A guest whose only communication has "[FAILED]" in the subject returns
- *      that record correctly so the UI can show the red "Failed" badge.
+ *   2. A guest whose only communication has status "failed" returns that
+ *      record correctly so the UI can show the failed-email count badge.
  */
 import { vi, describe, it, expect, beforeAll } from "vitest";
 import { memStorage } from "../server/mem-storage.js";
@@ -91,17 +91,17 @@ describe("GET /api/guests/:id/communications — empty state", () => {
   });
 });
 
-describe("GET /api/guests/:id/communications — FAILED entry", () => {
+describe("GET /api/guests/:id/communications — failed entry", () => {
   let failedCommId: string;
 
   beforeAll(async () => {
-    // Seed a single communication whose subject contains "[FAILED]"
     const comm = await memStorage.createGuestCommunication({
       guestId,
       type: "email",
       direction: "outbound",
       subject: "Check-in confirmation [FAILED]",
       content: "Email delivery failed: invalid address.",
+      status: "failed",
       staffId: null,
     });
     failedCommId = comm.id;
@@ -117,7 +117,7 @@ describe("GET /api/guests/:id/communications — FAILED entry", () => {
     expect(res.body.communications.length).toBeGreaterThan(0);
   });
 
-  it("preserves the [FAILED] marker in the subject so the UI can render the badge", async () => {
+  it("preserves the failed status so the UI can render the badge", async () => {
     const res = await request(app)
       .get(`/api/guests/${guestId}/communications`)
       .set("Authorization", authHeader);
@@ -126,7 +126,7 @@ describe("GET /api/guests/:id/communications — FAILED entry", () => {
       (c: any) => c.id === failedCommId
     );
     expect(failed).toBeDefined();
-    expect(failed.subject).toContain("[FAILED]");
+    expect(failed.status).toBe("failed");
   });
 
   it("each communication record has the fields the UI relies on", async () => {

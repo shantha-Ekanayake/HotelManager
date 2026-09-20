@@ -55,6 +55,7 @@ interface GuestCommunication {
   direction: string;
   subject?: string;
   content: string;
+  status?: "sent" | "failed" | "skipped";
   staffId?: string;
   createdAt: string;
 }
@@ -728,7 +729,7 @@ export default function Guests() {
                       Comms
                       {(() => {
                         const failedCount = (communicationsData as any)?.communications?.filter(
-                          (c: GuestCommunication) => c.subject?.includes("[FAILED]") || c.content?.toLowerCase().includes("delivery failed")
+                          (c: GuestCommunication) => c.status === "failed"
                         )?.length ?? 0;
                         return failedCount > 0 ? (
                           <span className="inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[1.25rem]" data-testid="badge-failed-email-count">

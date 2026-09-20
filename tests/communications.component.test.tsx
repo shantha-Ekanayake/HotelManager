@@ -218,6 +218,7 @@ describe("Guests communications tab — badge-failed-email-count", () => {
     direction: "outbound",
     subject: "Reservation reminder [FAILED]",
     content: "Failed to deliver.",
+    status: "failed",
     staffId: null,
     createdAt: "2026-07-01T10:00:00Z",
   };
@@ -229,6 +230,7 @@ describe("Guests communications tab — badge-failed-email-count", () => {
     direction: "outbound",
     subject: "Check-out receipt [FAILED]",
     content: "Failed to deliver.",
+    status: "failed",
     staffId: null,
     createdAt: "2026-07-02T10:00:00Z",
   };
@@ -240,6 +242,7 @@ describe("Guests communications tab — badge-failed-email-count", () => {
     direction: "outbound",
     subject: "Welcome email",
     content: "Thank you for your stay.",
+    status: "sent",
     staffId: null,
     createdAt: "2026-07-03T10:00:00Z",
   };
@@ -268,6 +271,23 @@ describe("Guests communications tab — badge-failed-email-count", () => {
 
   it("does NOT render badge-failed-email-count when all communications are successful", async () => {
     communicationsPayload = { communications: [SUCCESSFUL_COMM] };
+    await renderAndSelectGuest();
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("badge-failed-email-count")
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("does NOT infer a failure from message wording", async () => {
+    communicationsPayload = {
+      communications: [{
+        ...SUCCESSFUL_COMM,
+        subject: "Follow-up about [FAILED] deliveries",
+        content: "The prior delivery failed, but this message was sent.",
+      }],
+    };
     await renderAndSelectGuest();
 
     await waitFor(() => {

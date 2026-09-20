@@ -1406,6 +1406,7 @@ export function registerReservationRoutes(app: Express) {
                   direction: "outbound",
                   subject: `Check-in confirmation – #${reservation.confirmationNumber} [FAILED]`,
                   content: `Email delivery failed during check-in (email service returned failure).`,
+                  status: "failed",
                   staffId: req.user?.id || null
                 });
               } catch (logErr) {
@@ -1424,6 +1425,7 @@ export function registerReservationRoutes(app: Express) {
               direction: "outbound",
               subject: `Check-in confirmation – #${reservation.confirmationNumber} [FAILED]`,
               content: `Email delivery failed during check-in. Error: ${emailErr?.message || String(emailErr)}`,
+              status: "failed",
               staffId: req.user?.id || null
             });
           } catch (logErr) {
@@ -1471,6 +1473,7 @@ export function registerReservationRoutes(app: Express) {
               direction: "outbound",
               subject: `Check-in confirmation resend – #${reservation.confirmationNumber} [FAILED]`,
               content: `Resend of check-in confirmation email failed (email service returned failure).`,
+              status: "failed",
               staffId: req.user?.id || null
             });
           } catch (logErr) {
@@ -1491,6 +1494,7 @@ export function registerReservationRoutes(app: Express) {
               direction: "outbound",
               subject: `Check-in confirmation resend – #${reservation.confirmationNumber} [FAILED]`,
               content: `Resend of check-in confirmation email failed. Error: ${error?.message || String(error)}`,
+              status: "failed",
               staffId: req.user?.id || null
             });
           }
@@ -1550,6 +1554,7 @@ export function registerReservationRoutes(app: Express) {
                   direction: "outbound",
                   subject: `Departure receipt – #${reservation.confirmationNumber} [FAILED]`,
                   content: `Email delivery failed during check-out (email service returned failure).`,
+                  status: "failed",
                   staffId: req.user?.id || null
                 });
               } catch (logErr) {
@@ -1568,6 +1573,7 @@ export function registerReservationRoutes(app: Express) {
               direction: "outbound",
               subject: `Departure receipt – #${reservation.confirmationNumber} [FAILED]`,
               content: `Email delivery failed during check-out. Error: ${emailErr?.message || String(emailErr)}`,
+              status: "failed",
               staffId: req.user?.id || null
             });
           } catch (logErr) {
@@ -1617,6 +1623,7 @@ export function registerReservationRoutes(app: Express) {
               direction: "outbound",
               subject: `Departure receipt resend – #${reservation.confirmationNumber} [FAILED]`,
               content: `Resend of departure receipt email failed (email service returned failure).`,
+              status: "failed",
               staffId: req.user?.id || null
             });
           } catch (logErr) {
@@ -1656,6 +1663,7 @@ export function registerReservationRoutes(app: Express) {
               direction: "outbound",
               subject: `Departure receipt resend – #${reservation.confirmationNumber} [FAILED]`,
               content: `Resend of departure receipt email failed. Error: ${error?.message || String(error)}`,
+              status: "failed",
               staffId: req.user?.id || null
             });
           }

@@ -211,6 +211,7 @@ export const guestCommunications = pgTable("guest_communications", {
   direction: text("direction").notNull(), // inbound, outbound
   subject: text("subject"),
   content: text("content").notNull(),
+  status: text("status").$type<"sent" | "failed" | "skipped">(),
   staffId: varchar("staff_id"),
   createdAt: timestamp("created_at").notNull().defaultNow()
 });
