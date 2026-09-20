@@ -148,6 +148,56 @@ describe("GET /api/guests/:id/communications — failed entry", () => {
   });
 });
 
+describe("GET /api/guests/:id/communications — high-volume history", () => {
+  it("returns every entry newest-first when a guest has dozens of communications", async () => {
+    const guest = await memStorage.createGuest({
+      firstName: "Volume",
+      lastName: "TestGuest",
+      email: null,
+      phone: null,
+      address: null,
+      city: null,
+      state: null,
+      country: null,
+      postalCode: null,
+      idType: null,
+      idNumber: null,
+      nationality: null,
+      vipStatus: false,
+      notes: null,
+      dateOfBirth: null,
+      preferences: {},
+    });
+
+    const seeded = [];
+    for (let index = 0; index < 25; index += 1) {
+      const communication = await memStorage.createGuestCommunication({
+        guestId: guest.id,
+        type: "note",
+        direction: "internal",
+        subject: `History entry ${index}`,
+        content: `Volume test entry ${index}`,
+        status: "sent",
+        staffId: FRONTDESK_USER.id,
+      });
+      communication.createdAt = new Date(
+        Date.UTC(2026, 0, 1, 0, index)
+      );
+      seeded.push(communication);
+    }
+
+    const res = await request(app)
+      .get(`/api/guests/${guest.id}/communications`)
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.body.communications).toHaveLength(seeded.length);
+    expect(res.body.communications.map((comm: any) => comm.id)).toEqual(
+      seeded.map((comm) => comm.id).reverse()
+    );
+  });
+});
+
 describe("POST /api/guests/:id/communications — save new entry", () => {
   const validBody = {
     type: "note",
