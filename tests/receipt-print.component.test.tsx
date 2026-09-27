@@ -357,6 +357,20 @@ describe("CheckOutForm – Bill Summary balance label", () => {
     expect(screen.queryByText("Balance")).not.toBeInTheDocument();
   });
 
+  it("shows the outstanding amount with error styling for a partial payment", () => {
+    mockFolioQueryData = {
+      ...DEFAULT_FOLIO_QUERY_DATA,
+      folio: {
+        ...DEFAULT_FOLIO_QUERY_DATA.folio,
+        payments: [{ ...DEFAULT_FOLIO_QUERY_DATA.folio.payments[0], amount: "850.00" }],
+      },
+    };
+    render(<CheckOutForm reservationId="res-1" />);
+    const finalAmount = screen.getByTestId("text-final-amount");
+    expect(finalAmount).toHaveTextContent("Rs 50.00");
+    expect(finalAmount).toHaveClass("text-destructive");
+  });
+
   it("shows 'Balance' rather than 'Balance Due' for a credit balance", () => {
     mockFolioQueryData = {
       ...DEFAULT_FOLIO_QUERY_DATA,
