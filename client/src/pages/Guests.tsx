@@ -197,14 +197,10 @@ export default function Guests() {
         dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_response, { id }) => {
       toast({ title: "Guest updated successfully" });
       setShowEditDialog(false);
-      if (selectedGuest) {
-        invalidateGuestQueries(selectedGuest.id);
-      } else {
-        queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
-      }
+      invalidateGuestQueries(id);
     },
     onError: (error: any) => {
       toast({ title: "Error updating guest", description: error.message, variant: "destructive" });

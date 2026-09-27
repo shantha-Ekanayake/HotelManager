@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { QueryObserver } from "@tanstack/react-query";
 import { guestQueryKey, queryClient } from "../client/src/lib/queryClient.js";
 
 const { mutationOptions, guests, tagUpdates } = vi.hoisted(() => ({
@@ -61,6 +62,44 @@ afterEach(() => {
 });
 
 describe("guest profile mutation cache invalidation", () => {
+  it.each([
+    ["profile", 1, { id: "guest-updated", data: { firstName: "New" } }],
+    ["loyalty", 2, { id: "guest-updated", loyaltyTier: "gold", loyaltyPoints: 50 }],
+    ["blacklist", 3, { id: "guest-updated", blacklistStatus: true }],
+    ["tags", 4, { id: "guest-updated", tags: ["returning"] }],
+    ["segment", 5, { id: "guest-updated", segment: "business" }],
+  ])("%s success refreshes an active search and invalidates cached searches", async (_name, index, variables) => {
+    render(<Guests />);
+    const activeSearchKey = ["/api/guests/search", "new"];
+    const inactiveSearchKey = ["/api/guests/search", "old"];
+    const directoryKey = ["/api/guests/all"];
+    const profileKey = [...guestQueryKey("guest-updated"), "profile"];
+    const otherProfileKey = [...guestQueryKey("another-guest"), "profile"];
+    let currentSearch = { guests: [{ id: "guest-updated", tags: [] }] };
+    const fetchSearch = vi.fn(async () => currentSearch);
+
+    queryClient.setQueryData(activeSearchKey, currentSearch);
+    queryClient.setQueryData(inactiveSearchKey, { guests: [] });
+    queryClient.setQueryData(directoryKey, { guests: [] });
+    queryClient.setQueryData(profileKey, { guest: { id: "guest-updated" } });
+    queryClient.setQueryData(otherProfileKey, { guest: { id: "another-guest" } });
+    const observer = new QueryObserver(queryClient, { queryKey: activeSearchKey, queryFn: fetchSearch });
+    const unsubscribe = observer.subscribe(() => {});
+
+    currentSearch = { guests: [{ id: "guest-updated", tags: ["returning"] }] };
+    mutationOptions[index].onSuccess({}, variables);
+
+    await waitFor(() => {
+      expect(fetchSearch).toHaveBeenCalledTimes(1);
+      expect(queryClient.getQueryData(activeSearchKey)).toEqual(currentSearch);
+    });
+    expect(queryClient.getQueryState(inactiveSearchKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(profileKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(otherProfileKey)?.isInvalidated).toBe(false);
+    unsubscribe();
+  });
+
   it.each([
     ["loyalty", 2, { loyaltyTier: "gold", loyaltyPoints: 50 }],
     ["blacklist", 3, { blacklistStatus: true }],
