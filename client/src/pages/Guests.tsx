@@ -254,9 +254,9 @@ export default function Guests() {
     mutationFn: async ({ id, segment }: { id: string; segment: string }) => {
       return apiRequest("PUT", `/api/guests/${id}/segment`, { segment });
     },
-    onSuccess: () => {
+    onSuccess: (_response, { id }) => {
       toast({ title: "Segment updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
+      invalidateGuestQueries(id);
     },
   });
 

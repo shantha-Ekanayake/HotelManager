@@ -92,6 +92,33 @@ describe("guest profile mutation cache invalidation", () => {
     expect(queryClient.getQueryState(otherProfileKey)?.isInvalidated).toBe(false);
   });
 
+  it("segment success marks only the updated guest's profile stale along with the directory", async () => {
+    render(<Guests />);
+    const mutation = mutationOptions[5];
+    const request = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", request);
+
+    const variables = { id: "guest-updated", segment: "business" };
+    const response = await mutation.mutationFn(variables);
+    expect(request).toHaveBeenCalledWith(
+      "/api/guests/guest-updated/segment",
+      expect.objectContaining({ method: "PUT" }),
+    );
+
+    const profileKey = [...guestQueryKey("guest-updated"), "profile"];
+    const otherProfileKey = [...guestQueryKey("another-guest"), "profile"];
+    const directoryKey = ["/api/guests/all"];
+    queryClient.setQueryData(profileKey, { guest: variables });
+    queryClient.setQueryData(otherProfileKey, { guest: { id: "another-guest" } });
+    queryClient.setQueryData(directoryKey, { guests: [] });
+
+    mutation.onSuccess(response, variables);
+
+    expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(profileKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(otherProfileKey)?.isInvalidated).toBe(false);
+  });
+
   it("updates the open profile after loyalty and blacklist changes and keeps consecutive tags", () => {
     guests.push({
       id: "guest-updated",
