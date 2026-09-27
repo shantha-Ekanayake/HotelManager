@@ -1532,40 +1532,22 @@ export function registerReservationRoutes(app: Express) {
 
         // Send departure receipt email (non-blocking)
         let emailStatus: "sent" | "skipped" | "failed" = "skipped";
-        try {
+        const loadReceiptData = async () => {
           const guest = await storage.getGuest(reservation.guestId);
           const property = await storage.getProperty(reservation.propertyId);
           const folio = await storage.getFolioByReservation(id);
-          if (guest && folio) {
-            const charges = await storage.getChargesByFolio(folio.id);
-            const payments = await storage.getPaymentsByFolio(folio.id);
-            emailStatus = await sendCheckOutEmail(
-              guest,
-              reservation,
-              { charges, payments },
-              property?.name || "Our Hotel"
-            );
-            if (emailStatus === "failed") {
-              // sendCheckOutEmail absorbed the SMTP error; write the audit record here
-              try {
-                await storage.createGuestCommunication({
-                  guestId: reservation.guestId,
-                  type: "email",
-                  direction: "outbound",
-                  subject: `Departure receipt – #${reservation.confirmationNumber} [FAILED]`,
-                  content: `Email delivery failed during check-out (email service returned failure).`,
-                  status: "failed",
-                  staffId: req.user?.id || null
-                });
-              } catch (logErr) {
-                console.error("Failed to log email failure to guest_communications:", logErr);
-              }
-            }
-          }
+          if (!guest || !folio) return null;
+          const charges = await storage.getChargesByFolio(folio.id);
+          const payments = await storage.getPaymentsByFolio(folio.id);
+          return { guest, charges, payments, propertyName: property?.name || "Our Hotel" };
+        };
+        let receiptData: Awaited<ReturnType<typeof loadReceiptData>> = null;
+        try {
+          receiptData = await loadReceiptData();
         } catch (emailErr: any) {
-          console.error("Failed to send check-out email:", emailErr);
+          console.error("Failed to load check-out email data:", emailErr);
           emailStatus = "failed";
-          // Record failures thrown outside the email service (e.g. storage errors)
+          // Record failures while loading receipt data, not SMTP delivery failures.
           try {
             await storage.createGuestCommunication({
               guestId: reservation.guestId,
@@ -1578,6 +1560,30 @@ export function registerReservationRoutes(app: Express) {
             });
           } catch (logErr) {
             console.error("Failed to log email failure to guest_communications:", logErr);
+          }
+        }
+        if (receiptData) {
+          emailStatus = await sendCheckOutEmail(
+            receiptData.guest,
+            reservation,
+            { charges: receiptData.charges, payments: receiptData.payments },
+            receiptData.propertyName
+          );
+          if (emailStatus === "failed") {
+            // sendCheckOutEmail absorbed the SMTP error; write one audit record here.
+            try {
+              await storage.createGuestCommunication({
+                guestId: reservation.guestId,
+                type: "email",
+                direction: "outbound",
+                subject: `Departure receipt – #${reservation.confirmationNumber} [FAILED]`,
+                content: `Email delivery failed during check-out (email service returned failure).`,
+                status: "failed",
+                staffId: req.user?.id || null
+              });
+            } catch (logErr) {
+              console.error("Failed to log email failure to guest_communications:", logErr);
+            }
           }
         }
         
