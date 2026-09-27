@@ -448,7 +448,18 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
             </div>
           )}
           
-          {balance <= 0 && (
+          {balance < 0 && (
+            <div className="p-4 rounded-lg bg-amber-50 border border-amber-300" data-testid="settlement-credit">
+              <p className="text-sm font-medium text-amber-800">
+                Guest Credit: Rs {Math.abs(balance).toFixed(2)}
+              </p>
+              <p className="text-sm text-amber-900 mt-1">
+                Payments exceed charges. Review the overpayment and arrange a refund or adjustment as appropriate.
+              </p>
+            </div>
+          )}
+
+          {balance === 0 && (
             <div className="p-4 rounded-lg bg-hotel-success/10 border border-hotel-success/20">
               <p className="text-sm font-medium text-hotel-success">
                 Account Settled
@@ -508,7 +519,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
             Balance: Rs {balance.toFixed(2)}
           </Badge>
           <Badge variant={balance > 0 ? "destructive" : "default"}>
-            {balance > 0 ? "Payment Required" : "Fully Paid"}
+            {balance > 0 ? "Payment Required" : balance < 0 ? "Credit to Review" : "Fully Paid"}
           </Badge>
         </div>
 

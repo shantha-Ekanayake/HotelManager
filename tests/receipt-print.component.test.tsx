@@ -373,8 +373,10 @@ describe("CheckOutForm – Bill Summary balance label", () => {
     expect(screen.getByTestId("text-final-amount")).toHaveTextContent("Rs 0.00");
     expect(screen.getByTestId("text-final-amount")).toHaveClass("text-hotel-success");
     expect(screen.getByText("Account Settled")).toBeInTheDocument();
+    expect(screen.getByText("All charges have been paid in full")).toBeInTheDocument();
     expect(screen.getByText("Fully Paid")).toBeInTheDocument();
     expect(screen.queryByText(/Outstanding Balance:/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("settlement-credit")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("button-print-receipt"));
     expect(capturedHtml).toContain("Rs 0.00");
     expect(capturedHtml).toContain('class="balance-clear"');
@@ -412,6 +414,10 @@ describe("CheckOutForm – Bill Summary balance label", () => {
     const finalAmount = screen.getByTestId("text-final-amount");
     expect(finalAmount).toHaveTextContent("Rs 50.00");
     expect(finalAmount).toHaveClass("text-destructive");
+    expect(screen.getByText("Outstanding Balance: Rs 50.00")).toBeInTheDocument();
+    expect(screen.getByText("Payment Required")).toBeInTheDocument();
+    expect(screen.queryByText("Account Settled")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("settlement-credit")).not.toBeInTheDocument();
   });
 
   it("shows 'Balance' rather than 'Balance Due' for a credit balance", () => {
@@ -425,6 +431,15 @@ describe("CheckOutForm – Bill Summary balance label", () => {
     render(<CheckOutForm reservationId="res-1" />);
     expect(screen.getByText("Balance")).toBeInTheDocument();
     expect(screen.queryByText("Balance Due")).not.toBeInTheDocument();
+    expect(screen.getByTestId("text-final-amount")).toHaveTextContent("Rs -50.00");
+    expect(screen.getByTestId("settlement-credit")).toHaveTextContent("Guest Credit: Rs 50.00");
+    expect(screen.getByTestId("settlement-credit")).toHaveTextContent(
+      "Payments exceed charges. Review the overpayment and arrange a refund or adjustment as appropriate.",
+    );
+    expect(screen.getByText("Credit to Review")).toBeInTheDocument();
+    expect(screen.queryByText("Account Settled")).not.toBeInTheDocument();
+    expect(screen.queryByText("All charges have been paid in full")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Outstanding Balance:/)).not.toBeInTheDocument();
   });
 });
 
