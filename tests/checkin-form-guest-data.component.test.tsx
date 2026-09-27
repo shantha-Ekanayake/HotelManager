@@ -388,6 +388,7 @@ describe("CheckInForm registration card after guest reassignment", () => {
     const reservationResponse = () => ({
       reservation: {
         id: "reservation-1",
+        propertyId: "property-2",
         guestId: assignedGuestId,
         confirmationNumber: "CONF-REASSIGNED",
         arrivalDate: "2026-08-01",
@@ -414,7 +415,10 @@ describe("CheckInForm registration card after guest reassignment", () => {
               };
             }
             if (queryKey[0] === "/api/properties") {
-              return { properties: [{ name: "Grand Test Hotel" }] };
+              return { properties: [
+                { id: "property-1", name: "Other Hotel" },
+                { id: "property-2", name: "Grand Test Hotel" },
+              ] };
             }
             throw new Error(`Unexpected query key: ${queryKey.join("/")}`);
           },
@@ -454,6 +458,8 @@ describe("CheckInForm registration card after guest reassignment", () => {
     fireEvent.click(screen.getByTestId("button-print-registration-card"));
 
     expect(printedHtml).toContain("Bob Kaminski");
+    expect(printedHtml).toContain("<h1>Grand Test Hotel</h1>");
+    expect(printedHtml).not.toContain("Other Hotel");
     expect(printedHtml).toContain("bob.kaminski@example.com");
     expect(printedHtml).not.toContain("Alice Nguyen");
     expect(printedHtml).not.toContain("alice.nguyen@example.com");

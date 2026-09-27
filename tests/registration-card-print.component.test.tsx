@@ -1,6 +1,6 @@
 /**
- * Tests verifying that the registration card prints the REAL property name
- * (from /api/properties) rather than the placeholder "Hotel Management System".
+ * Tests verifying that the registration card prints the reservation's property
+ * (from /api/properties), regardless of list order.
  *
  * Strategy
  * ─────────
@@ -8,15 +8,13 @@
  * the exported production function buildPropertyCardFieldsFromList() (RegistrationCardPrint.ts).
  * Tests import that REAL function and:
  *
- *   1. Verify it correctly maps a stubbed /api/properties response into
+ *   1. Verify it selects the reservation property and maps the response into
  *      propertyName / propertyAddress / propertyPhone.
  *   2. Pipe those fields through the real buildRegistrationCardHtml() and
  *      confirm the printed HTML contains the real name/address, not the
  *      placeholder "Hotel Management System".
  *
- * This approach satisfies the task requirement ("stub /api/properties with a
- * known property and confirm the printed card HTML contains that property's
- * name and address, not the placeholder") while avoiding the jsdom rendering
+ * This exercises the same list-to-fields helper as CheckInForm, while avoiding the jsdom rendering
  * issues caused by CheckInForm's Radix UI portals and canvas elements.
  * CheckInForm uses the same list-to-fields function tested below.
  */
@@ -139,19 +137,27 @@ describe("buildPropertyCardFields – maps /api/properties response to card fiel
 // This mirrors the exact call chain:
 //   /api/properties → propertiesData → buildPropertyCardFields() → printRegistrationCard()
 
-describe("Registration card HTML – real property name flows from /api/properties stub to printed output", () => {
-  it("prints the first property when /api/properties returns multiple entries", () => {
+describe("Registration card HTML – reservation property flows from /api/properties to printed output", () => {
+  it("prints the reservation's second property, not the first property", () => {
     const propertiesData = {
       properties: [
         STUB_PROPERTY,
-        { ...STUB_PROPERTY, id: "prop-2", name: "Mountain View Hotel" },
+        { ...STUB_PROPERTY, id: "prop-2", name: "Mountain View Hotel", address: "7 Summit Road", phone: "+1-555-0200" },
       ],
     };
-    const fields = buildPropertyCardFieldsFromList(propertiesData.properties);
-    const html = buildRegistrationCardHtml({ ...BASE_CARD_DATA, ...fields });
+    const reservation = { propertyId: "prop-2" };
+    const fields = buildPropertyCardFieldsFromList(propertiesData.properties, reservation.propertyId);
+    expect(fields).not.toBeNull();
+    const html = buildRegistrationCardHtml({ ...BASE_CARD_DATA, ...fields! });
 
-    expect(html).toContain("<h1>Seaside Grand Hotel</h1>");
-    expect(html).not.toContain("Mountain View Hotel");
+    expect(html).toContain("<h1>Mountain View Hotel</h1>");
+    expect(html).toContain("7 Summit Road");
+    expect(html).toContain("Tel: +1-555-0200");
+    expect(html).not.toContain("Seaside Grand Hotel");
+    expect(html).not.toContain("42 Ocean Drive");
+    expect(html).not.toContain("+1-310-555-0100");
+    expect(buildPropertyCardFieldsFromList([...propertiesData.properties].reverse(), reservation.propertyId))
+      .toEqual(fields);
   });
 
   it("HTML header h1 contains the real property name, not the placeholder", () => {
@@ -176,11 +182,15 @@ describe("Registration card HTML – real property name flows from /api/properti
     expect(html).toContain("Tel: +1-310-555-0100");
   });
 
-  it("HTML falls back to the placeholder when /api/properties returns no entries", () => {
+  it("does not return printable fields when /api/properties returns no entries", () => {
     const propertiesData: { properties: typeof STUB_PROPERTY[] } = { properties: [] };
-    const fields = buildPropertyCardFieldsFromList(propertiesData.properties);
-    const html = buildRegistrationCardHtml({ ...BASE_CARD_DATA, ...fields });
-    expect(html).toContain("<h1>Hotel Management System</h1>");
+    expect(buildPropertyCardFieldsFromList(propertiesData.properties, "prop-1")).toBeNull();
+  });
+
+  it("does not substitute another property when the reservation's property is missing", () => {
+    expect(buildPropertyCardFieldsFromList([STUB_PROPERTY], "missing-property")).toBeNull();
+    expect(buildPropertyCardFieldsFromList([STUB_PROPERTY], undefined)).toBeNull();
+    expect(buildPropertyCardFieldsFromList(undefined, "prop-1")).toBeNull();
   });
 
   it("HTML-escapes special characters in the real property name", () => {

@@ -139,11 +139,14 @@ export function buildPropertyCardFields(
   };
 }
 
-/** Use the first property returned by /api/properties, as the check-in card does. */
+/** Only use the property belonging to the reservation; never print a different hotel's details. */
 export function buildPropertyCardFieldsFromList(
-  properties: ReadonlyArray<CardProperty> | undefined
-): PropertyCardFields {
-  return buildPropertyCardFields(properties?.[0]);
+  properties: ReadonlyArray<CardProperty & { id: string }> | undefined,
+  propertyId: string | undefined,
+): PropertyCardFields | null {
+  if (!propertyId) return null;
+  const property = properties?.find((candidate) => candidate.id === propertyId);
+  return property ? buildPropertyCardFields(property) : null;
 }
 
 /**

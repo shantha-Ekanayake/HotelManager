@@ -149,7 +149,15 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
   const handlePrintCard = () => {
     const res = reservation?.reservation;
     const g = guestData?.guest;
-    const propertyFields = buildPropertyCardFieldsFromList(propertiesData?.properties);
+    const propertyFields = buildPropertyCardFieldsFromList(propertiesData?.properties, res?.propertyId);
+    if (!propertyFields) {
+      toast({
+        variant: "destructive",
+        title: "Cannot print registration card",
+        description: "The reservation's hotel could not be found. Refresh the page and try again.",
+      });
+      return;
+    }
 
     const guestFields = buildGuestCardFields(g, idVerification);
     printRegistrationCard({
