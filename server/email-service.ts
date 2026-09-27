@@ -21,6 +21,16 @@ function formatDate(date: Date | string): string {
   return d.toLocaleDateString("en-US", { weekday: "short", year: "numeric", month: "long", day: "numeric" });
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, character => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]!);
+}
+
 function buildCheckInEmailHtml(
   guest: GuestInfo,
   reservation: ReservationInfo,
@@ -28,12 +38,14 @@ function buildCheckInEmailHtml(
   propertyName: string,
   propertyContact?: string
 ): string {
-  const guestName = `${guest.firstName} ${guest.lastName}`;
+  const guestName = escapeHtml(`${guest.firstName} ${guest.lastName}`);
+  const hotelName = escapeHtml(propertyName);
+  const confirmationNumber = escapeHtml(reservation.confirmationNumber);
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Welcome to ${propertyName}</title>
+  <title>Welcome to ${hotelName}</title>
   <style>
     body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
     .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
@@ -53,19 +65,19 @@ function buildCheckInEmailHtml(
 <body>
   <div class="container">
     <div class="header">
-      <h1>Welcome to ${propertyName}!</h1>
+      <h1>Welcome to ${hotelName}!</h1>
       <p>We're delighted to have you as our guest.</p>
     </div>
     <div class="body">
       <h2>Dear ${guestName},</h2>
-      <p>Thank you for choosing ${propertyName}. Your check-in has been successfully processed. We hope you enjoy your stay with us.</p>
+      <p>Thank you for choosing ${hotelName}. Your check-in has been successfully processed. We hope you enjoy your stay with us.</p>
 
       <div class="highlight">
-        <strong>Confirmation #:</strong> ${reservation.confirmationNumber}
+        <strong>Confirmation #:</strong> ${confirmationNumber}
       </div>
 
       <table class="detail-table">
-        <tr><td>Room Number</td><td>${roomNumber}</td></tr>
+        <tr><td>Room Number</td><td>${escapeHtml(roomNumber)}</td></tr>
         <tr><td>Check-In</td><td>${formatDate(reservation.arrivalDate)}</td></tr>
         <tr><td>Check-Out</td><td>${formatDate(reservation.departureDate)}</td></tr>
         <tr><td>Duration</td><td>${reservation.nights} night${reservation.nights !== 1 ? "s" : ""}</td></tr>
@@ -75,13 +87,13 @@ function buildCheckInEmailHtml(
 
       <p>Your folio has been opened and all charges will be tracked for your review at check-out. If you have any questions or special requests, please don't hesitate to contact our front desk.</p>
 
-      ${propertyContact ? `<p><strong>Contact us:</strong> ${propertyContact}</p>` : ""}
+      ${propertyContact ? `<p><strong>Contact us:</strong> ${escapeHtml(propertyContact)}</p>` : ""}
 
       <p>We wish you a wonderful and comfortable stay.</p>
-      <p>Warm regards,<br /><strong>${propertyName} Team</strong></p>
+      <p>Warm regards,<br /><strong>${hotelName} Team</strong></p>
     </div>
     <div class="footer">
-      This is an automated confirmation email sent on behalf of ${propertyName}. Please do not reply to this email.
+      This is an automated confirmation email sent on behalf of ${hotelName}. Please do not reply to this email.
     </div>
   </div>
 </body>
@@ -99,7 +111,9 @@ function buildCheckOutEmailHtml(
   folio: FolioInfo,
   propertyName: string
 ): string {
-  const guestName = `${guest.firstName} ${guest.lastName}`;
+  const guestName = escapeHtml(`${guest.firstName} ${guest.lastName}`);
+  const hotelName = escapeHtml(propertyName);
+  const confirmationNumber = escapeHtml(reservation.confirmationNumber);
   const charges = folio.charges || [];
   const payments = folio.payments || [];
   const totalCharges = charges.reduce((sum, c) => sum + Number(c.amount), 0);
@@ -108,13 +122,13 @@ function buildCheckOutEmailHtml(
 
   const chargeRows = charges.length
     ? charges.map(c => `
-        <tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:14px;color:#555;">${c.description}</td>
+         <tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:14px;color:#555;">${escapeHtml(c.description)}</td>
             <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:14px;text-align:right;">Rs ${Number(c.amount).toFixed(2)}</td></tr>`).join("")
     : `<tr><td colspan="2" style="padding:8px 12px;font-size:14px;color:#888;">No charges recorded</td></tr>`;
 
   const paymentRows = payments.length
     ? payments.map(p => `
-        <tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:14px;color:#555;">${p.paymentMethod} (${new Date(p.paymentDate).toLocaleDateString()})</td>
+         <tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:14px;color:#555;">${escapeHtml(p.paymentMethod)} (${new Date(p.paymentDate).toLocaleDateString()})</td>
             <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:14px;text-align:right;color:#2e7d32;">-Rs ${Number(p.amount).toFixed(2)}</td></tr>`).join("")
     : "";
 
@@ -122,7 +136,7 @@ function buildCheckOutEmailHtml(
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Departure Receipt – ${propertyName}</title>
+  <title>Departure Receipt – ${hotelName}</title>
   <style>
     body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
     .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
@@ -147,14 +161,14 @@ function buildCheckOutEmailHtml(
   <div class="container">
     <div class="header">
       <h1>Thank You for Staying with Us</h1>
-      <p>${propertyName} – Departure Receipt</p>
+      <p>${hotelName} – Departure Receipt</p>
     </div>
     <div class="body">
       <h2>Dear ${guestName},</h2>
-      <p>We hope you enjoyed your stay at ${propertyName}. Please find your departure summary below. We look forward to welcoming you again soon.</p>
+      <p>We hope you enjoyed your stay at ${hotelName}. Please find your departure summary below. We look forward to welcoming you again soon.</p>
 
       <div class="highlight">
-        <strong>Confirmation #:</strong> ${reservation.confirmationNumber}
+        <strong>Confirmation #:</strong> ${confirmationNumber}
       </div>
 
       <div class="section-title">Stay Details</div>
@@ -184,11 +198,11 @@ function buildCheckOutEmailHtml(
         </tr>
       </table>
 
-      <p>Thank you for choosing ${propertyName}. We hope to see you again!</p>
-      <p>Warm regards,<br /><strong>${propertyName} Team</strong></p>
+      <p>Thank you for choosing ${hotelName}. We hope to see you again!</p>
+      <p>Warm regards,<br /><strong>${hotelName} Team</strong></p>
     </div>
     <div class="footer">
-      This is an automated departure receipt sent on behalf of ${propertyName}. Please do not reply to this email.
+      This is an automated departure receipt sent on behalf of ${hotelName}. Please do not reply to this email.
     </div>
   </div>
 </body>

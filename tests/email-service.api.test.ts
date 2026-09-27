@@ -157,6 +157,67 @@ describe("sendCheckOutEmail – no-email guard (SMTP configured)", () => {
   });
 });
 
+describe("email service – HTML text encoding", () => {
+  const guest = {
+    firstName: "<img src=x>",
+    lastName: "O'Neil & Co",
+    email: "guest@example.com",
+  };
+  const reservation = {
+    ...BASE_RESERVATION,
+    confirmationNumber: 'CONF-<script>"x"</script>',
+  };
+  const propertyName = 'Hotel <b>"Grand" & Sons</b>';
+
+  it("encodes guest, property, contact, room and confirmation text in check-in HTML", async () => {
+    const result = await sendCheckInEmail(
+      guest,
+      reservation,
+      '101 <em>"suite"</em>',
+      propertyName,
+      'Call <a href="evil">here</a> & ask'
+    );
+
+    expect(result).toBe("sent");
+    const html = (sendMailMock.mock.calls[0][0] as { html: string }).html;
+    expect(html).toContain("&lt;img src=x&gt; O&#39;Neil &amp; Co");
+    expect(html).toContain("Hotel &lt;b&gt;&quot;Grand&quot; &amp; Sons&lt;/b&gt;");
+    expect(html).toContain("CONF-&lt;script&gt;&quot;x&quot;&lt;/script&gt;");
+    expect(html).toContain("101 &lt;em&gt;&quot;suite&quot;&lt;/em&gt;");
+    expect(html).toContain("Call &lt;a href=&quot;evil&quot;&gt;here&lt;/a&gt; &amp; ask");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<a href=");
+    expect(html).toContain("<strong>Contact us:</strong>");
+    expect(html).toContain("<table class=\"detail-table\">");
+  });
+
+  it("encodes guest, property, confirmation and folio text in check-out HTML", async () => {
+    const result = await sendCheckOutEmail(
+      guest,
+      reservation,
+      {
+        charges: [{ description: 'Room <img src=x> & "tax"', amount: "150.00" }],
+        payments: [{ paymentMethod: "card <b>paid</b> & 'cash'", amount: "150.00", paymentDate: new Date("2026-08-17") }],
+      },
+      propertyName
+    );
+
+    expect(result).toBe("sent");
+    const html = (sendMailMock.mock.calls[0][0] as { html: string }).html;
+    expect(html).toContain("&lt;img src=x&gt; O&#39;Neil &amp; Co");
+    expect(html).toContain("Hotel &lt;b&gt;&quot;Grand&quot; &amp; Sons&lt;/b&gt;");
+    expect(html).toContain("CONF-&lt;script&gt;&quot;x&quot;&lt;/script&gt;");
+    expect(html).toContain("Room &lt;img src=x&gt; &amp; &quot;tax&quot;");
+    expect(html).toContain("card &lt;b&gt;paid&lt;/b&gt; &amp; &#39;cash&#39;");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<b>paid</b>");
+    expect(html).toContain("<strong>Confirmation #:</strong>");
+    expect(html).toContain("<table class=\"detail-table\">");
+  });
+});
+
 describe("email service – partially configured SMTP", () => {
   beforeEach(() => {
     delete process.env.SMTP_USER;
