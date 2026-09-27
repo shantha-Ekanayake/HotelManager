@@ -351,7 +351,7 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
           )}
           
           <div className="flex justify-between font-bold text-xl">
-            <span>Balance Due</span>
+            <span>{balance > 0 ? "Balance Due" : "Balance"}</span>
             <span data-testid="text-final-amount" className={balance > 0 ? "text-destructive" : "text-hotel-success"}>
               Rs {balance.toFixed(2)}
             </span>

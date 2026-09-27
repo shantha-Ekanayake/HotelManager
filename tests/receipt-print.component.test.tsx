@@ -333,6 +333,44 @@ describe("printReceipt() – HTML content", () => {
 
 // ── CheckOutForm – form-level "Print Receipt" button ─────────────────────────
 
+describe("CheckOutForm – Bill Summary balance label", () => {
+  afterEach(() => {
+    mockFolioQueryData = undefined;
+  });
+
+  it("shows 'Balance' instead of 'Balance Due' for a fully paid folio", () => {
+    render(<CheckOutForm reservationId="res-1" />);
+    expect(screen.getByText("Balance")).toBeInTheDocument();
+    expect(screen.queryByText("Balance Due")).not.toBeInTheDocument();
+  });
+
+  it("shows 'Balance Due' when charges exceed payments", () => {
+    mockFolioQueryData = {
+      ...DEFAULT_FOLIO_QUERY_DATA,
+      folio: {
+        ...DEFAULT_FOLIO_QUERY_DATA.folio,
+        payments: [{ ...DEFAULT_FOLIO_QUERY_DATA.folio.payments[0], amount: "850.00" }],
+      },
+    };
+    render(<CheckOutForm reservationId="res-1" />);
+    expect(screen.getByText("Balance Due")).toBeInTheDocument();
+    expect(screen.queryByText("Balance")).not.toBeInTheDocument();
+  });
+
+  it("shows 'Balance' rather than 'Balance Due' for a credit balance", () => {
+    mockFolioQueryData = {
+      ...DEFAULT_FOLIO_QUERY_DATA,
+      folio: {
+        ...DEFAULT_FOLIO_QUERY_DATA.folio,
+        payments: [{ ...DEFAULT_FOLIO_QUERY_DATA.folio.payments[0], amount: "950.00" }],
+      },
+    };
+    render(<CheckOutForm reservationId="res-1" />);
+    expect(screen.getByText("Balance")).toBeInTheDocument();
+    expect(screen.queryByText("Balance Due")).not.toBeInTheDocument();
+  });
+});
+
 describe("CheckOutForm – form-level Print Receipt button", () => {
   beforeEach(() => {
     mockMutate.mockReset();
