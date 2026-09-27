@@ -629,7 +629,7 @@ export function registerRoomRoutes(app: Express) {
           const active = allReservations.filter(r => r.status !== "cancelled");
           const cancelled = allReservations.filter(r => r.status === "cancelled");
           const detail = active.length > 0
-            ? `Rate plan is still referenced by ${active.length} non-cancelled reservation(s). Cancel or reassign those reservations first.`
+            ? `Rate plan is still referenced by ${active.length} non-cancelled reservation(s)${cancelled.length > 0 ? ` and ${cancelled.length} cancelled reservation(s)` : ""}. Reassign or remove all referencing reservation records first; cancelling them does not remove their references.`
             : `Rate plan is still referenced by ${cancelled.length} cancelled reservation(s) and cannot be removed while those records exist.`;
           return res.status(409).json({
             error: "Cannot delete rate plan with existing reservations",

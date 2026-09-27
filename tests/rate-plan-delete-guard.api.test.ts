@@ -146,6 +146,8 @@ describe("DELETE /api/rate-plans/:id — FK guard", () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/existing reservations/i);
     expect(res.body.details).toMatch(/non-cancelled reservation/i);
+    expect(res.body.details).toMatch(/reassign or remove all referencing reservation records/i);
+    expect(res.body.details).toMatch(/cancelling them does not remove their references/i);
   });
 
   it("returns 409 when the rate plan has a checked-in reservation", async () => {
@@ -209,6 +211,22 @@ describe("DELETE /api/rate-plans/:id — FK guard", () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/existing reservations/i);
     expect(res.body.details).toMatch(/cancelled reservation/i);
+  });
+
+  it("returns 409 and includes both statuses when confirmed and cancelled reservations reference the plan", async () => {
+    const ratePlan = await makeRatePlan("with-mixed-reservations");
+    await makeReservation(ratePlan.id, "confirmed");
+    await makeReservation(ratePlan.id, "cancelled");
+
+    const res = await request(app)
+      .delete(`/api/rate-plans/${ratePlan.id}`)
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(409);
+    expect(res.body.details).toMatch(/1 non-cancelled reservation/i);
+    expect(res.body.details).toMatch(/1 cancelled reservation/i);
+    expect(res.body.details).toMatch(/all referencing reservation records/i);
+    expect(res.body.details).toMatch(/cancelling them does not remove their references/i);
   });
 
   it("returns 409 when the rate plan has daily rate records referencing it", async () => {
