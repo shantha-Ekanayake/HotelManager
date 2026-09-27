@@ -1,5 +1,6 @@
 import { eq, and, desc, asc, gte, lte, lt, gt, or, sql, isNull, isNotNull, inArray } from "drizzle-orm";
 import { db } from "./db";
+import { calculateFolioTotals } from "./folio-totals";
 import {
   type User,
   type InsertUser,
@@ -930,32 +931,9 @@ export class DatabaseStorage implements IHMSStorage {
     const folio = await this.getFolio(folioId);
     if (!folio) return;
 
-    const allCharges = await this.getChargesByFolio(folioId); // already filters voided
-    const totalCharges = allCharges
-      .reduce((sum, c) => sum + parseFloat(c.totalAmount.toString()), 0);
-
+    const allCharges = await this.getChargesByFolio(folioId);
     const allPayments = await this.getPaymentsByFolio(folioId);
-    const totalPayments = allPayments.reduce((sum, p) => {
-      if (p.status === 'completed') {
-        return sum + parseFloat(p.amount.toString());
-      }
-      if (p.status === 'refunded') {
-        const amt = parseFloat(p.amount.toString());
-        const refunded = parseFloat((p.refundAmount || '0').toString());
-        // Net contribution = amt - refunded (typically 0 for full refund, positive for partial)
-        return sum + Math.max(0, amt - refunded);
-      }
-      // pending / failed do not contribute
-      return sum;
-    }, 0);
-
-    const balance = totalCharges - totalPayments;
-
-    await this.updateFolio(folioId, {
-      totalCharges: totalCharges.toFixed(2),
-      totalPayments: totalPayments.toFixed(2),
-      balance: balance.toFixed(2),
-    });
+    await this.updateFolio(folioId, calculateFolioTotals(allCharges, allPayments));
   }
 
   async createCharge(charge: InsertCharge): Promise<Charge> {

@@ -10,6 +10,7 @@ import type {
   GuestCommunication, InsertGuestCommunication
 } from "@shared/schema";
 import type { IHMSStorage } from "./database-storage";
+import { calculateFolioTotals } from "./folio-totals";
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -1073,11 +1074,23 @@ class MemStorage implements IHMSStorage {
   }
   async getFoliosByDateRange(): Promise<Folio[]> { return []; }
   async calculateFolioBalance(folioId: string): Promise<{ totalCharges: number; totalPayments: number; balance: number }> {
-    const charges = await this.getChargesByFolio(folioId);
-    const payments = await this.getPaymentsByFolio(folioId);
-    const totalCharges = charges.reduce((sum, c) => sum + parseFloat(c.amount), 0);
-    const totalPayments = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
-    return { totalCharges, totalPayments, balance: totalCharges - totalPayments };
+    const totals = await this.folioTotals(folioId);
+    return {
+      totalCharges: Number(totals.totalCharges),
+      totalPayments: Number(totals.totalPayments),
+      balance: Number(totals.balance),
+    };
+  }
+  private async folioTotals(folioId: string) {
+    return calculateFolioTotals(
+      await this.getChargesByFolio(folioId),
+      await this.getPaymentsByFolio(folioId),
+    );
+  }
+  private async recomputeFolioTotals(folioId: string): Promise<void> {
+    if (this.folios.has(folioId)) {
+      await this.updateFolio(folioId, await this.folioTotals(folioId));
+    }
   }
   async createFolio(folio: InsertFolio): Promise<Folio> {
     const folioNumber = `F-${Date.now()}`;
@@ -1140,6 +1153,7 @@ class MemStorage implements IHMSStorage {
       createdAt: new Date()
     };
     this.charges.set(newCharge.id, newCharge);
+    await this.recomputeFolioTotals(newCharge.folioId);
     return newCharge;
   }
   async updateCharge(id: string, charge: Partial<InsertCharge>): Promise<Charge> {
@@ -1147,6 +1161,7 @@ class MemStorage implements IHMSStorage {
     if (!existing) throw new Error("Charge not found");
     const updated = { ...existing, ...charge };
     this.charges.set(id, updated);
+    await this.recomputeFolioTotals(updated.folioId);
     return updated;
   }
   async voidCharge(id: string, voidReason: string, voidedBy: string): Promise<Charge> {
@@ -1154,6 +1169,7 @@ class MemStorage implements IHMSStorage {
     if (!existing) throw new Error("Charge not found");
     const updated = { ...existing, isVoided: true, voidReason, voidedBy, voidedAt: new Date() };
     this.charges.set(id, updated);
+    await this.recomputeFolioTotals(updated.folioId);
     return updated;
   }
 
@@ -1190,6 +1206,7 @@ class MemStorage implements IHMSStorage {
       createdAt: new Date()
     };
     this.payments.set(newPayment.id, newPayment);
+    await this.recomputeFolioTotals(newPayment.folioId);
     return newPayment;
   }
   async updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment> {
@@ -1197,6 +1214,7 @@ class MemStorage implements IHMSStorage {
     if (!existing) throw new Error("Payment not found");
     const updated = { ...existing, ...payment, updatedAt: new Date() };
     this.payments.set(id, updated);
+    await this.recomputeFolioTotals(updated.folioId);
     return updated;
   }
 
