@@ -157,6 +157,38 @@ describe("sendCheckOutEmail – no-email guard (SMTP configured)", () => {
   });
 });
 
+describe("sendCheckOutEmail – receipt balance", () => {
+  const guest = { firstName: "John", lastName: "Smith", email: "john@example.com" };
+  const charges = [
+    { description: "Room", amount: "0.10" },
+    { description: "Tax", amount: "0.20" },
+  ];
+
+  it("shows a settled balance and settled styling for decimal charges paid in full", async () => {
+    const result = await sendCheckOutEmail(guest, BASE_RESERVATION, {
+      charges,
+      payments: [{ paymentMethod: "cash", amount: "0.30", paymentDate: new Date("2026-08-17") }],
+    }, "Grand Hotel");
+
+    expect(result).toBe("sent");
+    const html = (sendMailMock.mock.calls[0][0] as { html: string }).html;
+    expect(html).toContain("Total Charges</td>");
+    expect(html).toContain("Rs 0.30");
+    expect(html).toMatch(/<td class="balance-settled">Balance Settled<\/td>\s*<td class="balance-settled">Rs 0\.00 ✓<\/td>/);
+    expect(html).not.toContain("Balance Due</td>");
+  });
+
+  it("keeps a genuinely outstanding cent marked due", async () => {
+    await sendCheckOutEmail(guest, BASE_RESERVATION, {
+      charges,
+      payments: [{ paymentMethod: "cash", amount: "0.29", paymentDate: new Date("2026-08-17") }],
+    }, "Grand Hotel");
+
+    const html = (sendMailMock.mock.calls[0][0] as { html: string }).html;
+    expect(html).toMatch(/<td class="balance-due">Balance Due<\/td>\s*<td class="balance-due">Rs 0\.01<\/td>/);
+  });
+});
+
 describe("email service – HTML text encoding", () => {
   const guest = {
     firstName: "<img src=x>",

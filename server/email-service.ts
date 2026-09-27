@@ -105,6 +105,10 @@ interface FolioInfo {
   payments?: Array<{ paymentMethod: string; amount: string | number; paymentDate: Date | string }>;
 }
 
+function totalAmountInCents(items: Array<{ amount: string | number }>): number {
+  return items.reduce((sum, item) => sum + Math.round(Number(item.amount) * 100), 0);
+}
+
 function buildCheckOutEmailHtml(
   guest: GuestInfo,
   reservation: ReservationInfo,
@@ -116,9 +120,9 @@ function buildCheckOutEmailHtml(
   const confirmationNumber = escapeHtml(reservation.confirmationNumber);
   const charges = folio.charges || [];
   const payments = folio.payments || [];
-  const totalCharges = charges.reduce((sum, c) => sum + Number(c.amount), 0);
-  const totalPayments = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-  const balance = totalCharges - totalPayments;
+  const totalChargesCents = totalAmountInCents(charges);
+  const totalPaymentsCents = totalAmountInCents(payments);
+  const balanceCents = totalChargesCents - totalPaymentsCents;
 
   const chargeRows = charges.length
     ? charges.map(c => `
@@ -182,7 +186,7 @@ function buildCheckOutEmailHtml(
       <table class="detail-table">
         ${chargeRows}
         <tr><td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:14px;color:#666;">Total Charges</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:14px;font-weight:600;text-align:right;">Rs ${totalCharges.toFixed(2)}</td></tr>
+             <td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:14px;font-weight:600;text-align:right;">Rs ${(totalChargesCents / 100).toFixed(2)}</td></tr>
       </table>
 
       ${payments.length ? `
@@ -193,8 +197,8 @@ function buildCheckOutEmailHtml(
 
       <table class="detail-table">
         <tr class="total-row">
-          <td class="${balance <= 0 ? "balance-settled" : "balance-due"}">Balance ${balance <= 0 ? "Settled" : "Due"}</td>
-          <td class="${balance <= 0 ? "balance-settled" : "balance-due"}">Rs ${Math.abs(balance).toFixed(2)}${balance <= 0 ? " ✓" : ""}</td>
+          <td class="${balanceCents <= 0 ? "balance-settled" : "balance-due"}">Balance ${balanceCents <= 0 ? "Settled" : "Due"}</td>
+          <td class="${balanceCents <= 0 ? "balance-settled" : "balance-due"}">Rs ${(Math.abs(balanceCents) / 100).toFixed(2)}${balanceCents <= 0 ? " ✓" : ""}</td>
         </tr>
       </table>
 
@@ -219,10 +223,10 @@ export async function sendCheckOutEmail(
 
   if (!smtpHost) {
     // SMTP not configured — log and no-op
-    const totalCharges = (folio.charges || []).reduce((s, c) => s + Number(c.amount), 0);
-    const totalPayments = (folio.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+    const totalChargesCents = totalAmountInCents(folio.charges || []);
+    const totalPaymentsCents = totalAmountInCents(folio.payments || []);
     console.log("[EMAIL] SMTP not configured. Would have sent check-out receipt to:", guest.email);
-    console.log(`[EMAIL] Confirmation: ${reservation.confirmationNumber} | Charges: Rs ${totalCharges.toFixed(2)} | Payments: Rs ${totalPayments.toFixed(2)} | Balance: Rs ${(totalCharges - totalPayments).toFixed(2)} | Property: ${propertyName}`);
+    console.log(`[EMAIL] Confirmation: ${reservation.confirmationNumber} | Charges: Rs ${(totalChargesCents / 100).toFixed(2)} | Payments: Rs ${(totalPaymentsCents / 100).toFixed(2)} | Balance: Rs ${((totalChargesCents - totalPaymentsCents) / 100).toFixed(2)} | Property: ${propertyName}`);
     return "skipped";
   }
 
