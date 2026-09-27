@@ -55,7 +55,7 @@ interface GuestCommunication {
   direction: string;
   subject?: string;
   content: string;
-  status?: "sent" | "failed" | "skipped";
+  status?: "sent" | "failed" | "skipped" | null;
   staffId?: string;
   createdAt: string;
 }
@@ -953,7 +953,7 @@ export default function Guests() {
                     ) : (
                       <div className="space-y-3">
                         {(communicationsData as any)?.communications?.map((comm: GuestCommunication) => {
-                          const isFailed = comm.subject?.includes("[FAILED]") || comm.content?.toLowerCase().includes("delivery failed");
+                          const isFailed = comm.status === "failed";
                           return (
                             <div
                               key={comm.id}
@@ -978,7 +978,7 @@ export default function Guests() {
                               </div>
                               {comm.subject && (
                                 <p className="font-medium text-sm mb-1" data-testid={`text-comm-subject-${comm.id}`}>
-                                  {comm.subject.replace(" [FAILED]", "")}
+                                  {comm.status != null ? comm.subject.replace(/ \[FAILED\]$/, "") : comm.subject}
                                 </p>
                               )}
                               <p className="text-sm text-muted-foreground" data-testid={`text-comm-content-${comm.id}`}>{comm.content}</p>

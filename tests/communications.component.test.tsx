@@ -10,9 +10,8 @@
  *   1. When the API returns an empty array the component shows
  *      data-testid="text-no-communications" ("No communications logged").
  *
- *   2. When the API returns a communication whose subject contains "[FAILED]"
- *      the component renders data-testid="badge-failed-<id>" (the red
- *      "Failed" badge).
+ *   2. Rows use saved delivery status, not message wording, for the red
+ *      "Failed" badge and styling.
  */
 
 // @vitest-environment jsdom
@@ -171,6 +170,7 @@ describe("Guests communications tab — FAILED entry", () => {
     direction: "outbound",
     subject: "Check-in confirmation [FAILED]",
     content: "Email delivery failed: invalid address.",
+    status: "failed",
     staffId: null,
     createdAt: "2026-07-01T10:00:00Z",
   };
@@ -189,14 +189,27 @@ describe("Guests communications tab — FAILED entry", () => {
     });
   });
 
-  it("shows the red 'Failed' badge on a communication with [FAILED] in the subject", async () => {
+  it("shows the red 'Failed' badge and styling for a failed delivery", async () => {
     await renderAndSelectGuest();
 
     await waitFor(() => {
       expect(
         screen.getByTestId(`badge-failed-${FAILED_COMM.id}`)
       ).toBeInTheDocument();
+      expect(screen.getByTestId(`card-communication-${FAILED_COMM.id}`)).toHaveClass("border-destructive/60");
+      expect(screen.getByTestId(`text-comm-subject-${FAILED_COMM.id}`)).toHaveTextContent("Check-in confirmation");
+      expect(screen.getByTestId(`text-comm-subject-${FAILED_COMM.id}`)).not.toHaveTextContent("[FAILED]");
     });
+  });
+
+  it("labels a failed delivery even when its text has no failure marker", async () => {
+    communicationsPayload = {
+      communications: [{ ...FAILED_COMM, subject: "Check-in confirmation", content: "Delivery attempted." }],
+    };
+    await renderAndSelectGuest();
+
+    expect(screen.getByTestId(`badge-failed-${FAILED_COMM.id}`)).toHaveTextContent("Failed");
+    expect(screen.getByTestId(`card-communication-${FAILED_COMM.id}`)).toHaveClass("bg-destructive/5");
   });
 
   it("does NOT show the empty-state message when there is at least one communication", async () => {
@@ -336,7 +349,52 @@ describe("Guests communications tab — badge-failed-email-count", () => {
       expect(
         screen.queryByTestId("badge-failed-email-count")
       ).not.toBeInTheDocument();
+      expect(screen.queryByTestId(`badge-failed-${SUCCESSFUL_COMM.id}`)).not.toBeInTheDocument();
+      expect(screen.getByTestId(`card-communication-${SUCCESSFUL_COMM.id}`)).not.toHaveClass("border-destructive/60");
+      expect(screen.getByTestId(`text-comm-subject-${SUCCESSFUL_COMM.id}`)).toHaveTextContent("Follow-up about [FAILED] deliveries");
+      expect(screen.getByTestId(`text-comm-content-${SUCCESSFUL_COMM.id}`)).toHaveTextContent("prior delivery failed");
     });
+  });
+
+  it("leaves null-status correspondence readable without inferring failure from its words", async () => {
+    communicationsPayload = {
+      communications: [
+        { ...SUCCESSFUL_COMM, id: "legacy-note", status: null, type: "phone", direction: "inbound", subject: "Question about [FAILED] deliveries", content: "The earlier delivery failed." },
+        { ...SUCCESSFUL_COMM, id: "legacy-marker", status: null, subject: "Old receipt [FAILED]", content: "Email delivery failed." },
+      ],
+    };
+    await renderAndSelectGuest();
+
+    for (const id of ["legacy-note", "legacy-marker"]) {
+      expect(screen.queryByTestId(`badge-failed-${id}`)).not.toBeInTheDocument();
+      expect(screen.getByTestId(`card-communication-${id}`)).not.toHaveClass("border-destructive/60");
+    }
+    expect(screen.getByTestId("text-comm-subject-legacy-note")).toHaveTextContent("Question about [FAILED] deliveries");
+    expect(screen.getByTestId("text-comm-subject-legacy-marker")).toHaveTextContent("Old receipt [FAILED]");
+    expect(screen.queryByTestId("badge-failed-email-count")).not.toBeInTheDocument();
+  });
+
+  it("does not label a skipped email as failed even when its text mentions failure", async () => {
+    communicationsPayload = {
+      communications: [{ ...SUCCESSFUL_COMM, status: "skipped", subject: "Receipt [FAILED]", content: "Previous delivery failed." }],
+    };
+    await renderAndSelectGuest();
+
+    expect(screen.queryByTestId(`badge-failed-${SUCCESSFUL_COMM.id}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`card-communication-${SUCCESSFUL_COMM.id}`)).not.toHaveClass("border-destructive/60");
+    expect(screen.getByTestId(`text-comm-subject-${SUCCESSFUL_COMM.id}`)).toHaveTextContent("Receipt");
+    expect(screen.getByTestId(`text-comm-subject-${SUCCESSFUL_COMM.id}`)).not.toHaveTextContent("[FAILED]");
+  });
+
+  it("does not show a trailing legacy failure marker on a sent email", async () => {
+    communicationsPayload = {
+      communications: [{ ...SUCCESSFUL_COMM, subject: "Receipt [FAILED]" }],
+    };
+    await renderAndSelectGuest();
+
+    expect(screen.queryByTestId(`badge-failed-${SUCCESSFUL_COMM.id}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`text-comm-subject-${SUCCESSFUL_COMM.id}`)).toHaveTextContent("Receipt");
+    expect(screen.getByTestId(`text-comm-subject-${SUCCESSFUL_COMM.id}`)).not.toHaveTextContent("[FAILED]");
   });
 
   it("does NOT render badge-failed-email-count when there are no communications", async () => {
