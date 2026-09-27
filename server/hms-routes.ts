@@ -1481,6 +1481,15 @@ export function registerReservationRoutes(app: Express) {
           }
           return res.status(502).json({ error: "Email service failed to deliver the message", emailStatus: "failed" });
         }
+        if (emailStatus === "skipped") {
+          return res.json({
+            success: true,
+            message: guest.email
+              ? "Check-in email was not sent"
+              : "Guest has no email address — check-in email not sent",
+            emailStatus
+          });
+        }
         res.json({ success: true, message: "Check-in email sent", emailStatus });
       } catch (error: any) {
         console.error("Resend check-in email error:", error);
@@ -1501,7 +1510,7 @@ export function registerReservationRoutes(app: Express) {
         } catch (logErr) {
           console.error("Failed to log resend exception to guest_communications:", logErr);
         }
-        res.status(500).json({ error: "Failed to send email" });
+        res.status(500).json({ error: "Failed to send email", emailStatus: "failed" });
       }
     }
   );

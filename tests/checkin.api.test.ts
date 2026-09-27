@@ -286,16 +286,50 @@ describe("POST /api/reservations/:id/check-in", () => {
 });
 
 describe("POST /api/reservations/:id/send-checkin-email", () => {
-  it("returns 200 when SMTP is not configured (no-op path)", async () => {
-    // SMTP_HOST is intentionally blank in vitest.config.ts so sendCheckInEmail
-    // takes the no-op branch and the request still completes successfully.
+  it("reports a skipped delivery without claiming the email was sent", async () => {
+    sendCheckInEmailMock.mockResolvedValueOnce("skipped");
     const res = await request(app)
       .post(`/api/reservations/${testReservationId}/send-checkin-email`)
       .set("Authorization", authHeader)
       .send({});
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ success: true });
+    expect(sendCheckInEmailMock).toHaveBeenCalled();
+    expect(res.body).toMatchObject({
+      success: true,
+      emailStatus: "skipped",
+      message: "Check-in email was not sent",
+    });
+  });
+
+  it("reports a sent delivery only when the service sends it", async () => {
+    sendCheckInEmailMock.mockResolvedValueOnce("sent");
+    const res = await request(app)
+      .post(`/api/reservations/${testReservationId}/send-checkin-email`)
+      .set("Authorization", authHeader)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      success: true,
+      emailStatus: "sent",
+      message: "Check-in email sent",
+    });
+  });
+
+  it("reports a failed delivery as an error", async () => {
+    sendCheckInEmailMock.mockResolvedValueOnce("failed");
+    const res = await request(app)
+      .post(`/api/reservations/${testReservationId}/send-checkin-email`)
+      .set("Authorization", authHeader)
+      .send({});
+
+    expect(res.status).toBe(502);
+    expect(res.body).toMatchObject({
+      emailStatus: "failed",
+      error: "Email service failed to deliver the message",
+    });
+    expect(res.body.success).not.toBe(true);
   });
 
   it("returns 404 for a non-existent reservation", async () => {

@@ -179,7 +179,15 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
     if (!reservationId) return;
     setResendLoading(true);
     try {
-      await apiRequest("POST", `/api/reservations/${reservationId}/send-checkin-email`, {});
+      const response = await apiRequest("POST", `/api/reservations/${reservationId}/send-checkin-email`, {});
+      const result = await response.json();
+      if (result.emailStatus === "skipped") {
+        toast({
+          title: "Email Not Sent",
+          description: result.message || "The check-in confirmation email was not sent.",
+        });
+        return;
+      }
       toast({
         title: "Email Sent",
         description: "Check-in confirmation email has been resent to the guest.",
