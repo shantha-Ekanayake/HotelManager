@@ -977,11 +977,23 @@ export function registerGuestRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
-        const { type, direction, subject, content } = req.body;
+        const { type, direction, subject, content, status } = req.body;
         
         if (!type || !direction || !content) {
           return res.status(400).json({ error: "Type, direction, and content are required" });
         }
+        if (status != null && !["sent", "failed", "skipped"].includes(status)) {
+          return res.status(400).json({ error: "Invalid communication status" });
+        }
+
+        // Older email writers mark failed delivery in their log text. Classify
+        // those records on creation rather than waiting for the startup backfill.
+        const inferredFailure = type === "email" && direction === "outbound" &&
+          (typeof subject === "string" && subject.endsWith(" [FAILED]") ||
+           typeof content === "string" && (
+             /^Email delivery failed/i.test(content) ||
+             /^Resend of .* email failed/i.test(content)
+           ));
         
         const communication = await storage.createGuestCommunication({
           guestId: id,
@@ -989,6 +1001,7 @@ export function registerGuestRoutes(app: Express) {
           direction,
           subject: subject || null,
           content,
+          status: status ?? (inferredFailure ? "failed" : null),
           staffId: req.user?.id || null
         });
         res.status(201).json({ communication });

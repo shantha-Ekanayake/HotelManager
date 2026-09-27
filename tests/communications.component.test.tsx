@@ -273,6 +273,28 @@ describe("Guests communications tab — badge-failed-email-count", () => {
     });
   });
 
+  it("updates the count and row when a newly logged failure appears in the guest history", async () => {
+    communicationsPayload = { communications: [SUCCESSFUL_COMM] };
+    const { rerender } = await renderAndSelectGuest();
+    expect(screen.queryByTestId("badge-failed-email-count")).not.toBeInTheDocument();
+
+    communicationsPayload = {
+      communications: [SUCCESSFUL_COMM, { ...FAILED_COMM_A, id: "just-logged", status: "failed" }],
+    };
+    rerender(<Guests />);
+
+    expect(screen.getByTestId("badge-failed-email-count")).toHaveTextContent("1 failed");
+    expect(screen.getByTestId("badge-failed-just-logged")).toBeInTheDocument();
+  });
+
+  it("does not count a failed phone contact as a failed email", async () => {
+    communicationsPayload = {
+      communications: [{ ...FAILED_COMM_A, type: "phone", content: "Call failed." }],
+    };
+    await renderAndSelectGuest();
+    expect(screen.queryByTestId("badge-failed-email-count")).not.toBeInTheDocument();
+  });
+
   it("renders badge-failed-email-count with count 2 when there are two FAILED communications", async () => {
     communicationsPayload = { communications: [FAILED_COMM_A, FAILED_COMM_B] };
     await renderAndSelectGuest();

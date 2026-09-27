@@ -362,6 +362,62 @@ describe("POST /api/guests/:id/communications — save new entry", () => {
     expect(found).toBeDefined();
   });
 
+  it("counts a newly logged outbound email failure immediately, without a backfill", async () => {
+    const created = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send({
+        type: "email",
+        direction: "outbound",
+        subject: "Departure receipt [FAILED]",
+        content: "Email delivery failed: address rejected.",
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.communication.status).toBe("failed");
+
+    const list = await request(app)
+      .get(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader);
+    expect(list.body.communications.find((c: any) => c.id === created.body.communication.id)?.status).toBe("failed");
+  });
+
+  it("preserves an explicitly supplied delivery status", async () => {
+    const created = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send({
+        type: "email",
+        direction: "outbound",
+        subject: "Retry [FAILED]",
+        content: "Previously failed, now delivered.",
+        status: "sent",
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.communication.status).toBe("sent");
+  });
+
+  it.each([
+    ["email", "outbound", "Follow-up about failed delivery", "The previous email failed."],
+    ["email", "inbound", "Receipt [FAILED]", "Email delivery failed: please help."],
+    ["phone", "outbound", "Receipt [FAILED]", "Email delivery failed: please help."],
+  ])("does not classify ordinary or non-outbound-email records as failures", async (type, direction, subject, content) => {
+    const created = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send({ type, direction, subject, content });
+    expect(created.status).toBe(201);
+    expect(created.body.communication.status).toBeNull();
+  });
+
+  it("rejects unknown delivery statuses", async () => {
+    const created = await request(app)
+      .post(`/api/guests/${guestId}/communications`)
+      .set("Authorization", authHeader)
+      .send({ ...validBody, status: "unknown" });
+    expect(created.status).toBe(400);
+  });
+
   it("returns 400 when content is missing", async () => {
     const { content: _omit, ...bodyWithoutContent } = validBody;
     const res = await request(app)

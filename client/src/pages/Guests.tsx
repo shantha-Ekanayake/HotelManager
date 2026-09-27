@@ -730,7 +730,7 @@ export default function Guests() {
                       Comms
                       {(() => {
                         const failedCount = (communicationsData as any)?.communications?.filter(
-                          (c: GuestCommunication) => c.status === "failed"
+                          (c: GuestCommunication) => c.type === "email" && c.direction === "outbound" && c.status === "failed"
                         )?.length ?? 0;
                         return failedCount > 0 ? (
                           <span className="inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[1.25rem]" data-testid="badge-failed-email-count">
@@ -953,7 +953,7 @@ export default function Guests() {
                     ) : (
                       <div className="space-y-3">
                         {(communicationsData as any)?.communications?.map((comm: GuestCommunication) => {
-                          const isFailed = comm.status === "failed";
+                          const isFailed = comm.type === "email" && comm.direction === "outbound" && comm.status === "failed";
                           return (
                             <div
                               key={comm.id}
