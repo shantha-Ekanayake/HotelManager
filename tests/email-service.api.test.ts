@@ -159,3 +159,80 @@ describe("sendCheckOutEmail – no-email guard (SMTP configured)", () => {
     expect(mailArgs.subject).toContain("CONF-001");
   });
 });
+
+describe("email service – partially configured SMTP", () => {
+  beforeEach(() => {
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASS;
+  });
+
+  it.each([
+    {
+      name: "check-in",
+      send: () =>
+        sendCheckInEmail(
+          { firstName: "Jane", lastName: "Doe", email: "jane@example.com" },
+          BASE_RESERVATION,
+          "101",
+          "Grand Hotel"
+        ),
+    },
+    {
+      name: "check-out",
+      send: () =>
+        sendCheckOutEmail(
+          { firstName: "John", lastName: "Smith", email: "john@example.com" },
+          BASE_RESERVATION,
+          BASE_FOLIO,
+          "Grand Hotel"
+        ),
+    },
+  ])("attempts $name delivery when SMTP_HOST is set without credentials", async ({ send }) => {
+    const result = await send();
+
+    expect(result).toBe("sent");
+    expect(result).not.toBe("skipped");
+    expect(createTransportMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "smtp.example.com",
+        auth: undefined,
+      })
+    );
+    expect(sendMailMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("email service – partial SMTP variables without a host", () => {
+  beforeEach(() => {
+    delete process.env.SMTP_HOST;
+  });
+
+  it.each([
+    {
+      name: "check-in",
+      send: () =>
+        sendCheckInEmail(
+          { firstName: "Jane", lastName: "Doe", email: "jane@example.com" },
+          BASE_RESERVATION,
+          "101",
+          "Grand Hotel"
+        ),
+    },
+    {
+      name: "check-out",
+      send: () =>
+        sendCheckOutEmail(
+          { firstName: "John", lastName: "Smith", email: "john@example.com" },
+          BASE_RESERVATION,
+          BASE_FOLIO,
+          "Grand Hotel"
+        ),
+    },
+  ])("skips $name delivery when credentials exist but SMTP_HOST is absent", async ({ send }) => {
+    const result = await send();
+
+    expect(result).toBe("skipped");
+    expect(createTransportMock).not.toHaveBeenCalled();
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+});
