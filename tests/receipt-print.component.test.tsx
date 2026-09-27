@@ -329,6 +329,19 @@ describe("printReceipt() – HTML content", () => {
     expect(capturedHtml).toContain("123 Main St, Springfield");
     expect(capturedHtml).not.toContain("Tel:");
   });
+
+  it("renders only the Tel: line when the property has a phone but no address", () => {
+    printReceipt({
+      ...SAMPLE_RECEIPT_DATA,
+      propertyPhone: "+1 555 123 4567",
+      propertyAddress: null,
+    });
+    const headerLines = new DOMParser()
+      .parseFromString(capturedHtml, "text/html")
+      .querySelectorAll(".header .address");
+    expect(headerLines).toHaveLength(1);
+    expect(headerLines[0].textContent).toBe("Tel: +1 555 123 4567");
+  });
 });
 
 // ── CheckOutForm – form-level "Print Receipt" button ─────────────────────────
