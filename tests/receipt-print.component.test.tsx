@@ -296,6 +296,29 @@ describe("printReceipt() – HTML content", () => {
     expect(capturedHtml).toContain("&lt;script&gt;");
   });
 
+  it("escapes property address and phone markup as text without creating elements", () => {
+    const address = '<img src=x onerror="alert(1)"> 12 & Main';
+    const phone = '<svg onload="alert(2)"></svg> +1 555';
+    printReceipt({
+      ...SAMPLE_RECEIPT_DATA,
+      propertyAddress: address,
+      propertyPhone: phone,
+    });
+
+    expect(capturedHtml).toContain('&lt;img src=x onerror=&quot;alert(1)&quot;&gt; 12 &amp; Main');
+    expect(capturedHtml).toContain('&lt;svg onload=&quot;alert(2)&quot;&gt;&lt;/svg&gt; +1 555');
+    expect(capturedHtml).not.toContain("<img");
+    expect(capturedHtml).not.toContain("<svg");
+
+    const header = new DOMParser().parseFromString(capturedHtml, "text/html").querySelector(".header");
+    expect(header).not.toBeNull();
+    expect(Array.from(header!.querySelectorAll(".address"), (line) => line.textContent)).toEqual([
+      address,
+      `Tel: ${phone}`,
+    ]);
+    expect(header!.querySelector("img, svg")).toBeNull();
+  });
+
   it("renders the nights field when provided", () => {
     printReceipt(SAMPLE_RECEIPT_DATA); // nights: 6
     expect(capturedHtml).toContain("Nights");
