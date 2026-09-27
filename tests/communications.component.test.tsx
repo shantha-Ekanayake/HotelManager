@@ -291,6 +291,26 @@ describe("Guests communications tab — badge-failed-email-count", () => {
     });
   });
 
+  it("updates badge-failed-email-count when one of two failed communications is deleted", async () => {
+    communicationsPayload = { communications: [FAILED_COMM_A, FAILED_COMM_B] };
+    const { rerender } = await renderAndSelectGuest();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-failed-email-count")).toHaveTextContent(
+        "2 failed"
+      );
+    });
+
+    communicationsPayload = { communications: [FAILED_COMM_A] };
+    rerender(<Guests />);
+
+    await waitFor(() => {
+      const badge = screen.getByTestId("badge-failed-email-count");
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveTextContent("1 failed");
+    });
+  });
+
   it("does NOT render badge-failed-email-count when all communications are successful", async () => {
     communicationsPayload = { communications: [SUCCESSFUL_COMM] };
     await renderAndSelectGuest();
