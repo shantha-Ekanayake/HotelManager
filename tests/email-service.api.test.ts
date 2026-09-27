@@ -1,12 +1,9 @@
 /**
- * Unit tests for the email-service no-email guard.
+ * Unit tests for email-service delivery outcomes and SMTP configuration.
  *
- * Strategy: stub nodemailer.createTransport so the tests exercise the real
- * sendCheckInEmail / sendCheckOutEmail implementations on the SMTP-configured
- * code path without ever touching a real mail server.  We then assert:
- *
- *  - when guest.email is null/undefined → returns "skipped", sendMail never called
- *  - when guest.email is a real address  → returns "sent",    sendMail called once
+ * Stub nodemailer.createTransport to exercise the real check-in and check-out
+ * implementations without touching a mail server. Cover missing addresses,
+ * partial SMTP configuration, and successful or failed delivery attempts.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
@@ -46,7 +43,7 @@ beforeEach(() => {
   process.env.SMTP_USER = "user@example.com";
   process.env.SMTP_PASS = "secret";
   process.env.SMTP_FROM = "noreply@example.com";
-  sendMailMock.mockClear();
+  sendMailMock.mockReset().mockResolvedValue({ messageId: "test-msg-id" });
   createTransportMock.mockClear();
 });
 
@@ -199,6 +196,97 @@ describe("email service – partially configured SMTP", () => {
       })
     );
     expect(sendMailMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("email service – SMTP user without a password", () => {
+  beforeEach(() => {
+    delete process.env.SMTP_PASS;
+  });
+
+  it.each([
+    {
+      name: "check-in",
+      send: () =>
+        sendCheckInEmail(
+          { firstName: "Jane", lastName: "Doe", email: "jane@example.com" },
+          BASE_RESERVATION,
+          "101",
+          "Grand Hotel"
+        ),
+    },
+    {
+      name: "check-out",
+      send: () =>
+        sendCheckOutEmail(
+          { firstName: "John", lastName: "Smith", email: "john@example.com" },
+          BASE_RESERVATION,
+          BASE_FOLIO,
+          "Grand Hotel"
+        ),
+    },
+  ])("reports $name delivery as sent when the transport accepts it", async ({ send }) => {
+    const result = await send();
+
+    expect(result).toBe("sent");
+    expect(result).not.toBe("skipped");
+    expect(createTransportMock).toHaveBeenCalledOnce();
+    expect(createTransportMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "smtp.example.com",
+        auth: { user: "user@example.com", pass: "" },
+      })
+    );
+    expect(sendMailMock).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    {
+      name: "check-in",
+      send: () =>
+        sendCheckInEmail(
+          { firstName: "Jane", lastName: "Doe", email: "jane@example.com" },
+          BASE_RESERVATION,
+          "101",
+          "Grand Hotel"
+        ),
+    },
+    {
+      name: "check-out",
+      send: () =>
+        sendCheckOutEmail(
+          { firstName: "John", lastName: "Smith", email: "john@example.com" },
+          BASE_RESERVATION,
+          BASE_FOLIO,
+          "Grand Hotel"
+        ),
+    },
+  ])("reports $name delivery as failed when the transport rejects it", async ({ send }) => {
+    sendMailMock.mockRejectedValueOnce(new Error("SMTP authentication rejected"));
+    const logError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = await send();
+
+      expect(result).toBe("failed");
+      expect(result).not.toBe("skipped");
+      expect(createTransportMock).toHaveBeenCalledOnce();
+      expect(createTransportMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: "smtp.example.com",
+          auth: { user: "user@example.com", pass: "" },
+        })
+      );
+      expect(sendMailMock).toHaveBeenCalledOnce();
+      expect(logError).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to send"),
+        expect.any(String),
+        "| Confirmation:",
+        "CONF-001",
+        expect.any(Error)
+      );
+    } finally {
+      logError.mockRestore();
+    }
   });
 });
 
