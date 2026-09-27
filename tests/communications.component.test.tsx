@@ -65,6 +65,13 @@ const DEMO_PROFILE = {
 // ── mutable slot for communications — tests swap this before each render ──────
 
 let communicationsPayload: { communications: any[] } = { communications: [] };
+let guestList = [DEMO_GUEST];
+let communicationsByGuest: Record<string, { communications: any[] }> = {};
+
+beforeEach(() => {
+  guestList = [DEMO_GUEST];
+  communicationsByGuest = {};
+});
 
 // ── mock @tanstack/react-query ────────────────────────────────────────────────
 
@@ -75,13 +82,13 @@ vi.mock("@tanstack/react-query", () => ({
       : String(opts?.queryKey ?? "");
 
     if (key.includes("all")) {
-      return { data: { guests: [DEMO_GUEST] }, isLoading: false };
+      return { data: { guests: guestList }, isLoading: false };
     }
     if (key.includes("profile")) {
       return { data: DEMO_PROFILE, isLoading: false };
     }
     if (key.includes("communications")) {
-      return { data: communicationsPayload, isLoading: false };
+      return { data: communicationsByGuest[opts.queryKey[1]] ?? communicationsPayload, isLoading: false };
     }
     return { data: null, isLoading: false };
   }),
@@ -303,6 +310,29 @@ describe("Guests communications tab — badge-failed-email-count", () => {
       const badge = screen.getByTestId("badge-failed-email-count");
       expect(badge).toBeInTheDocument();
       expect(badge).toHaveTextContent("2 failed");
+    });
+  });
+
+  it("shows only the newly selected guest's failed emails after switching guests", async () => {
+    const secondGuest = { ...DEMO_GUEST, id: "guest-comms-second", firstName: "Second" };
+    const secondGuestFailure = { ...FAILED_COMM_A, id: "comm-second-failed", guestId: secondGuest.id };
+    guestList = [DEMO_GUEST, secondGuest];
+    communicationsByGuest = {
+      [DEMO_GUEST.id]: { communications: [FAILED_COMM_A, FAILED_COMM_B] },
+      [secondGuest.id]: { communications: [secondGuestFailure, { ...SUCCESSFUL_COMM, id: "comm-second-sent", guestId: secondGuest.id }] },
+    };
+
+    await renderAndSelectGuest();
+    expect(screen.getByTestId("badge-failed-email-count")).toHaveTextContent("2 failed");
+    expect(screen.getByTestId(`card-communication-${FAILED_COMM_A.id}`)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId(`card-guest-${secondGuest.id}`));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-failed-email-count")).toHaveTextContent("1 failed");
+      expect(screen.getByTestId(`card-communication-${secondGuestFailure.id}`)).toBeInTheDocument();
+      expect(screen.queryByTestId(`card-communication-${FAILED_COMM_A.id}`)).not.toBeInTheDocument();
+      expect(screen.queryByTestId(`card-communication-${FAILED_COMM_B.id}`)).not.toBeInTheDocument();
     });
   });
 
