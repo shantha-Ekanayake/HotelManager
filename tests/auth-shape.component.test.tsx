@@ -7,9 +7,8 @@ import "@testing-library/jest-dom";
 import { apiRequest, queryClient } from "../client/src/lib/queryClient";
 import App from "../client/src/App";
 
-// The sidebar is outside the auth router; it does not participate in this flow.
-vi.mock("@/components/AppSidebar", () => ({ AppSidebar: () => null }));
-vi.mock("@/components/DashboardHeader", () => ({ default: () => null }));
+vi.mock("@/components/AppSidebar", () => ({ AppSidebar: () => <div>Staff sidebar</div> }));
+vi.mock("@/components/DashboardHeader", () => ({ default: () => <div>Staff header</div> }));
 vi.mock("@/pages/Dashboard", () => ({ default: () => <div>Dashboard loaded</div> }));
 
 describe("auth verification", () => {
@@ -59,6 +58,48 @@ describe("auth verification", () => {
     expect(screen.getByText("Enter your credentials to access the system")).toBeInTheDocument();
     expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
   });
+
+  it.each([
+    {},
+    { id: "1", username: "staff", role: "admin" },
+    { id: "1", username: "staff", role: "admin", propertyId: "  " },
+    { id: "1", username: "staff", role: "front_desk_staff", propertyId: null },
+  ])("rejects incomplete account details without showing staff screens (%j)", async (user) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ user }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(<App />);
+
+    await waitFor(() => expect(localStorage.getItem("hms_token")).toBeNull());
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getByText("Session error")).toBeInTheDocument();
+    expect(screen.getByText("Your session could not be verified. Please sign in again.")).toBeInTheDocument();
+    expect(screen.queryByText("Dashboard loaded")).not.toBeInTheDocument();
+    expect(screen.queryByText("Staff sidebar")).not.toBeInTheDocument();
+    expect(screen.queryByText("Staff header")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["operations_manager", "admin", "it_admin"])(
+    "keeps a valid multi-property %s account signed in",
+    async (role) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ user: { id: "1", username: "staff", role, propertyId: null } }),
+      }));
+
+      render(<App />);
+
+      expect(await screen.findByText("Dashboard loaded")).toBeInTheDocument();
+      expect(screen.getByText("Staff sidebar")).toBeInTheDocument();
+      expect(localStorage.getItem("hms_token")).toBe("stale-token");
+      expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+    },
+  );
 
   it("clears a token rejected with 401, renders Login, and stops sending that token", async () => {
     const fetchMock = vi.fn().mockResolvedValue({

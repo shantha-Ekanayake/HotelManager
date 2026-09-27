@@ -49,19 +49,7 @@ function Router() {
     return <Login />;
   }
 
-  return (
-    <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/front-desk" component={FrontDesk} />
-      <Route path="/reservations" component={Reservations} />
-      <Route path="/rooms" component={Rooms} />
-      <Route path="/guests" component={Guests} />
-      <Route path="/housekeeping" component={Housekeeping} />
-      <Route path="/billing" component={Billing} />
-      <Route path="/reports" component={FinancialReports} />
-      <Route component={NotFound} />
-    </Switch>
-  );
+  return <AuthenticatedApp />;
 }
 
 function AuthenticatedApp() {
@@ -90,7 +78,17 @@ function AuthenticatedApp() {
           />
           <main className="flex-1 overflow-auto">
             <div className="container mx-auto p-6">
-              <Router />
+              <Switch>
+                <Route path="/" component={Dashboard} />
+                <Route path="/front-desk" component={FrontDesk} />
+                <Route path="/reservations" component={Reservations} />
+                <Route path="/rooms" component={Rooms} />
+                <Route path="/guests" component={Guests} />
+                <Route path="/housekeeping" component={Housekeeping} />
+                <Route path="/billing" component={Billing} />
+                <Route path="/reports" component={FinancialReports} />
+                <Route component={NotFound} />
+              </Switch>
             </div>
           </main>
         </div>
@@ -105,7 +103,7 @@ function App() {
       <ThemeProvider>
         <CurrencyProvider>
           <TooltipProvider>
-            <AuthenticatedApp />
+            <Router />
             <Toaster />
           </TooltipProvider>
         </CurrencyProvider>

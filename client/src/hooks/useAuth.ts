@@ -6,10 +6,22 @@ interface User {
   id: string;
   username: string;
   role: string;
-  propertyId: string;
+  propertyId: string | null;
   firstName?: string;
   lastName?: string;
   email?: string;
+}
+
+function isCompleteUser(user: unknown): user is User {
+  if (typeof user !== "object" || user === null || Array.isArray(user)) return false;
+  const fields = user as Record<string, unknown>;
+  const hasIdentity = ["id", "username", "role"].every(
+    (field) => typeof fields[field] === "string" && (fields[field] as string).trim().length > 0,
+  );
+  const hasProperty = typeof fields.propertyId === "string" && fields.propertyId.trim().length > 0;
+  const hasMultiPropertyAccess = fields.propertyId === null &&
+    ["it_admin", "admin", "operations_manager"].includes(fields.role as string);
+  return hasIdentity && (hasProperty || hasMultiPropertyAccess);
 }
 
 const tokenListeners = new Set<() => void>();
@@ -32,18 +44,18 @@ function clearToken(token: string) {
 export function useAuth() {
   const token = useSyncExternalStore(subscribeToToken, getToken);
 
-  const { data: authData, isLoading, error, isSuccess, refetch } = useQuery<{ user: User }, Error, User>({
+  const { data: authData, isLoading, error, isSuccess, refetch } = useQuery<{ user?: unknown }, Error, User | null>({
     queryKey: ["/api", "auth", "me"],
     retry: false,
     enabled: !!token, // Only run query if token exists
     staleTime: 5 * 60 * 1000, // 5 minutes
-    select: (data) => data?.user, // Extract user from { user: ... } response
+    select: (data) => isCompleteUser(data?.user) ? data.user : null,
   });
 
-  // Detect bad server response shape: token present, query succeeded, but user is missing
+  // A successful response is not a valid session unless its user has usable account details.
   useEffect(() => {
     if (token && isSuccess && !authData && getToken() === token) {
-      console.error("useAuth: /api/auth/me returned an unexpected shape — 'user' field is missing");
+      console.error("useAuth: /api/auth/me returned incomplete account details");
       toast({
         title: "Session error",
         description: "Your session could not be verified. Please sign in again.",
