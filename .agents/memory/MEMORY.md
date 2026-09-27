@@ -1,0 +1,1 @@
+- [Historical data backfills](historical-data-backfills.md) — Publish syncs schema, not existing rows; data-only migrations must reach production through an explicit app path.
