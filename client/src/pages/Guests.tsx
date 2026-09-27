@@ -216,9 +216,10 @@ export default function Guests() {
     mutationFn: async ({ id, loyaltyTier, loyaltyPoints }: { id: string; loyaltyTier: string; loyaltyPoints: number }) => {
       return apiRequest("PUT", `/api/guests/${id}/loyalty`, { loyaltyTier, loyaltyPoints });
     },
-    onSuccess: () => {
+    onSuccess: (_response, { id, loyaltyTier, loyaltyPoints }) => {
       toast({ title: "Loyalty tier updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
+      setSelectedGuest((guest) => guest?.id === id ? { ...guest, loyaltyTier, loyaltyPoints } : guest);
+      invalidateGuestQueries(id);
     },
   });
 
@@ -227,9 +228,12 @@ export default function Guests() {
     mutationFn: async ({ id, blacklistStatus, blacklistReason }: { id: string; blacklistStatus: boolean; blacklistReason?: string }) => {
       return apiRequest("PUT", `/api/guests/${id}/blacklist`, { blacklistStatus, blacklistReason });
     },
-    onSuccess: () => {
+    onSuccess: (_response, { id, blacklistStatus, blacklistReason }) => {
       toast({ title: "Blacklist status updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
+      setSelectedGuest((guest) => guest?.id === id
+        ? { ...guest, blacklistStatus, blacklistReason }
+        : guest);
+      invalidateGuestQueries(id);
     },
   });
 
@@ -238,9 +242,10 @@ export default function Guests() {
     mutationFn: async ({ id, tags }: { id: string; tags: string[] }) => {
       return apiRequest("PUT", `/api/guests/${id}/tags`, { tags });
     },
-    onSuccess: () => {
+    onSuccess: (_response, { id, tags }) => {
       toast({ title: "Tags updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/guests/all"] });
+      setSelectedGuest((guest) => guest?.id === id ? { ...guest, tags } : guest);
+      invalidateGuestQueries(id);
     },
   });
 
