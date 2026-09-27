@@ -17,9 +17,11 @@ app.use(express.json());
 registerHMSRoutes(app);
 
 let propertyId: string;
+let otherPropertyId: string;
 let userId: string;
 let token: string;
 let roomTypeId: string;
+let otherRoomTypeId: string;
 
 describe("room-type amenities through the API and database", () => {
   beforeAll(async () => {
@@ -31,6 +33,22 @@ describe("room-type amenities through the API and database", () => {
       country: "Test country",
     }).returning();
     propertyId = property.id;
+
+    const [otherProperty] = await db.insert(properties).values({
+      name: `Other amenities test ${suffix}`,
+      address: "Test address",
+      city: "Test city",
+      country: "Test country",
+    }).returning();
+    otherPropertyId = otherProperty.id;
+
+    const [otherRoomType] = await db.insert(roomTypes).values({
+      propertyId: otherPropertyId,
+      name: "Other hotel's room type",
+      baseRate: "100.00",
+      amenities: ["Pool"],
+    }).returning();
+    otherRoomTypeId = otherRoomType.id;
 
     const [user] = await db.insert(users).values({
       username: `amenities-${suffix}`,
@@ -47,8 +65,10 @@ describe("room-type amenities through the API and database", () => {
 
   afterAll(async () => {
     if (roomTypeId) await db.delete(roomTypes).where(eq(roomTypes.id, roomTypeId));
+    if (otherRoomTypeId) await db.delete(roomTypes).where(eq(roomTypes.id, otherRoomTypeId));
     if (userId) await db.delete(users).where(eq(users.id, userId));
     if (propertyId) await db.delete(properties).where(eq(properties.id, propertyId));
+    if (otherPropertyId) await db.delete(properties).where(eq(properties.id, otherPropertyId));
   });
 
   async function readAmenities() {
@@ -114,5 +134,21 @@ describe("room-type amenities through the API and database", () => {
     expect(cleared.status).toBe(200);
     expect(cleared.body.roomType.amenities).toEqual([]);
     expect(await readAmenities()).toEqual([]);
+  });
+
+  it("rejects a manager's update to another hotel's room type without changing it", async () => {
+    const response = await request(app)
+      .put(`/api/room-types/${otherRoomTypeId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Unauthorized change", amenities: ["Gym"] });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Access denied");
+    const [stored] = await db.select().from(roomTypes).where(eq(roomTypes.id, otherRoomTypeId));
+    expect(stored).toMatchObject({
+      propertyId: otherPropertyId,
+      name: "Other hotel's room type",
+      amenities: ["Pool"],
+    });
   });
 });

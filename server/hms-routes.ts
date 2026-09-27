@@ -384,6 +384,11 @@ export function registerRoomRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
+        const existingRoomType = await storage.getRoomType(id);
+        if (!existingRoomType) return res.status(404).json({ error: "Room type not found" });
+        if (!req.user || !canAccessProperty(req.user, existingRoomType.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
         const updateData = updateRoomTypeSchema.parse(req.body);
         
         const roomType = await storage.updateRoomType(id, updateData);
