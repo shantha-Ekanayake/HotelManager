@@ -528,9 +528,11 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
   it("still returns 502 when sendCheckOutEmail returns 'failed' and recording the failure throws", async () => {
     mockSendCheckOutEmail.mockClear();
     mockSendCheckOutEmail.mockResolvedValueOnce("failed");
+    const auditError = new Error("Communication log unavailable");
     const communicationSpy = vi
       .spyOn(memStorage, "createGuestCommunication")
-      .mockRejectedValueOnce(new Error("Communication log unavailable"));
+      .mockRejectedValueOnce(auditError);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
       const res = await request(app)
@@ -541,8 +543,13 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
       expect(res.status).toBe(502);
       expect(res.body).toMatchObject({ emailStatus: "failed" });
       expect(communicationSpy).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to log resend failure to guest_communications:",
+        auditError
+      );
     } finally {
       communicationSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
     }
   });
 
@@ -572,10 +579,13 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
 
   it("still returns 500 when sendCheckOutEmail and recording the failure both throw", async () => {
     mockSendCheckOutEmail.mockClear();
-    mockSendCheckOutEmail.mockRejectedValueOnce(new Error("SMTP connection refused"));
+    const sendError = new Error("SMTP connection refused");
+    const auditError = new Error("Communication log unavailable");
+    mockSendCheckOutEmail.mockRejectedValueOnce(sendError);
     const communicationSpy = vi
       .spyOn(memStorage, "createGuestCommunication")
-      .mockRejectedValueOnce(new Error("Communication log unavailable"));
+      .mockRejectedValueOnce(auditError);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
       const res = await request(app)
@@ -586,8 +596,14 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
       expect(res.status).toBe(500);
       expect(res.body).toMatchObject({ error: "Failed to send email" });
       expect(communicationSpy).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith("Resend check-out email error:", sendError);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to log resend exception to guest_communications:",
+        auditError
+      );
     } finally {
       communicationSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
     }
   });
 });
