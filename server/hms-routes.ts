@@ -493,6 +493,11 @@ export function registerRoomRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
+        const existingRoom = await storage.getRoom(id);
+        if (!existingRoom) return res.status(404).json({ error: "Room not found" });
+        if (!req.user || !canAccessProperty(req.user, existingRoom.propertyId)) {
+          return res.status(403).json({ error: "Access denied" });
+        }
         const { isActive, notes, status } = req.body;
         
         const validStatuses = ["available", "occupied", "clean", "dirty", "inspected", "out_of_order", "maintenance"] as const;

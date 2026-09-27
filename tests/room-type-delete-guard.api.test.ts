@@ -50,10 +50,10 @@ beforeAll(() => {
   authHeader = `Bearer ${generateToken(MANAGER_USER)}`;
 });
 
-/** Helper: create a fresh room type in memStorage for prop-demo */
-async function makeRoomType(suffix: string) {
+/** Helper: create a fresh room type in memStorage */
+async function makeRoomType(suffix: string, propertyId = "prop-demo") {
   return memStorage.createRoomType({
-    propertyId: "prop-demo",
+    propertyId,
     name: `Test Type ${suffix}`,
     description: "Guard test room type",
     maxOccupancy: 2,
@@ -63,9 +63,9 @@ async function makeRoomType(suffix: string) {
 }
 
 /** Helper: create a room referencing a given room type */
-async function makeRoom(roomTypeId: string, isActive: boolean = true) {
+async function makeRoom(roomTypeId: string, isActive: boolean = true, propertyId = "prop-demo") {
   return memStorage.createRoom({
-    propertyId: "prop-demo",
+    propertyId,
     roomTypeId,
     roomNumber: `guard-rt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     floor: "1",
@@ -164,6 +164,34 @@ describe("DELETE /api/room-types/:id — referencing-room guard", () => {
 });
 
 describe("PATCH /api/rooms/:id/block — room activation", () => {
+  it("does not let a hotel manager block a room at another property", async () => {
+    const otherPropertyId = "prop-other";
+    const roomType = await makeRoomType("other-property", otherPropertyId);
+    const room = await makeRoom(roomType.id, true, otherPropertyId);
+
+    const res = await request(app)
+      .patch(`/api/rooms/${room.id}/block`)
+      .set("Authorization", authHeader)
+      .send({ isActive: false, status: "out_of_order", notes: "Blocked" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/access denied/i);
+    expect(await memStorage.getRoom(room.id)).toMatchObject({
+      isActive: true,
+      status: "available",
+      notes: null,
+    });
+  });
+
+  it("returns 404 for a room that does not exist", async () => {
+    const res = await request(app)
+      .patch("/api/rooms/does-not-exist/block")
+      .set("Authorization", authHeader)
+      .send({ isActive: false });
+
+    expect(res.status).toBe(404);
+  });
+
   it("deactivates and reactivates an active room, persisting the final state", async () => {
     const roomType = await makeRoomType("block-unblock");
     const room = await makeRoom(roomType.id, true);
