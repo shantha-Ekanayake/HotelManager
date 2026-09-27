@@ -17,6 +17,7 @@ import {
   insertUserSchema,
   insertPropertySchema,
   insertRoomTypeSchema,
+  updateRoomTypeSchema,
   insertRoomSchema,
   insertGuestSchema,
   insertReservationSchema,
@@ -383,11 +384,14 @@ export function registerRoomRoutes(app: Express) {
     async (req: AuthRequest, res: Response) => {
       try {
         const { id } = req.params;
-        const updateData = req.body;
+        const updateData = updateRoomTypeSchema.parse(req.body);
         
         const roomType = await storage.updateRoomType(id, updateData);
         res.json({ roomType });
       } catch (error) {
+        if (error instanceof z.ZodError) {
+          return res.status(400).json({ error: "Validation error", details: error.errors });
+        }
         console.error("Update room type error:", error);
         res.status(500).json({ error: "Internal server error" });
       }

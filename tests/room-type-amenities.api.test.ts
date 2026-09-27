@@ -79,6 +79,34 @@ describe("room-type amenities through the API and database", () => {
     expect(updated.body.roomType.amenities).toEqual(["WiFi", "Pool", "Gym"]);
     expect(await readAmenities()).toEqual(["WiFi", "Pool", "Gym"]);
 
+    for (const amenities of ["WiFi", [7], { WiFi: true }, null]) {
+      const invalid = await request(app)
+        .put(`/api/room-types/${roomTypeId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "Should not be saved", amenities });
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.error).toBe("Validation error");
+      expect(await readAmenities()).toEqual(["WiFi", "Pool", "Gym"]);
+    }
+
+    const unrelated = await request(app)
+      .put(`/api/room-types/${roomTypeId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ propertyId: randomUUID(), name: "Should not be saved" });
+    expect(unrelated.status).toBe(400);
+
+    const edited = await request(app)
+      .put(`/api/room-types/${roomTypeId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Updated amenities test room", baseRate: 125, amenities: ["Desk"] });
+    expect(edited.status).toBe(200);
+    expect(edited.body.roomType).toMatchObject({
+      name: "Updated amenities test room",
+      baseRate: "125.00",
+      amenities: ["Desk"],
+    });
+    expect(await readAmenities()).toEqual(["Desk"]);
+
     const cleared = await request(app)
       .put(`/api/room-types/${roomTypeId}`)
       .set("Authorization", `Bearer ${token}`)

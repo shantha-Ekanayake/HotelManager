@@ -466,6 +466,18 @@ export const insertRoomTypeSchema = createInsertSchema(roomTypes, {
   updatedAt: true
 });
 
+export const updateRoomTypeSchema = insertRoomTypeSchema.pick({
+  name: true,
+  description: true,
+  maxOccupancy: true,
+  baseRate: true,
+  amenities: true,
+  isActive: true,
+}).partial().extend({
+  // The room-type form submits a number; Drizzle's decimal column expects a string.
+  baseRate: z.union([z.string(), z.number().finite().transform(String)]).optional(),
+}).strict();
+
 export const insertRoomSchema = createInsertSchema(rooms).omit({
   id: true,
   lastCleaned: true,
