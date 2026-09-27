@@ -172,6 +172,19 @@ describe("DELETE /api/rate-plans/:id — FK guard", () => {
     expect(res.body.error).toMatch(/existing reservations/i);
   });
 
+  it("returns 409 when the rate plan has a no-show reservation", async () => {
+    const ratePlan = await makeRatePlan("with-no-show");
+    await makeReservation(ratePlan.id, "no_show");
+
+    const res = await request(app)
+      .delete(`/api/rate-plans/${ratePlan.id}`)
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/existing reservations/i);
+    expect(res.body.details).toMatch(/1 non-cancelled reservation/i);
+  });
+
   it("returns 409 with the correct count when multiple reservations reference the plan", async () => {
     const ratePlan = await makeRatePlan("with-two-reservations");
     await makeReservation(ratePlan.id, "confirmed");
