@@ -198,6 +198,55 @@ describe("GET /api/guests/:id/communications — high-volume history", () => {
   });
 });
 
+describe("GET /api/guests/:id/communications — tied timestamps", () => {
+  it("orders entries with the same timestamp by ID descending on repeated requests", async () => {
+    const guest = await memStorage.createGuest({
+      firstName: "Tied",
+      lastName: "TestGuest",
+      email: null,
+      phone: null,
+      address: null,
+      city: null,
+      state: null,
+      country: null,
+      postalCode: null,
+      idType: null,
+      idNumber: null,
+      nationality: null,
+      vipStatus: false,
+      notes: null,
+      dateOfBirth: null,
+      preferences: {},
+    });
+    const tiedAt = new Date("2026-01-01T00:00:00.000Z");
+    // Seed in a different order from the expected ID order to catch insertion-order sorting.
+    for (const id of ["tie-b", "tie-a", "tie-c"]) {
+      const communication = await memStorage.createGuestCommunication({
+        guestId: guest.id,
+        type: "note",
+        direction: "internal",
+        subject: id,
+        content: id,
+        status: "sent",
+        staffId: FRONTDESK_USER.id,
+      });
+      communication.id = id;
+      communication.createdAt = tiedAt;
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const res = await request(app)
+        .get(`/api/guests/${guest.id}/communications`)
+        .set("Authorization", authHeader);
+
+      expect(res.status).toBe(200);
+      expect(res.body.communications.map((comm: { id: string }) => comm.id)).toEqual([
+        "tie-c", "tie-b", "tie-a",
+      ]);
+    }
+  });
+});
+
 describe("POST /api/guests/:id/communications — save new entry", () => {
   const validBody = {
     type: "note",

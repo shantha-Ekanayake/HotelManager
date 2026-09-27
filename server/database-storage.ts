@@ -594,7 +594,7 @@ export class DatabaseStorage implements IHMSStorage {
   async getGuestCommunications(guestId: string): Promise<any[]> {
     return await db.select().from(guestCommunications)
       .where(eq(guestCommunications.guestId, guestId))
-      .orderBy(desc(guestCommunications.createdAt));
+      .orderBy(desc(guestCommunications.createdAt), desc(guestCommunications.id));
   }
 
   async createGuestCommunication(communication: any): Promise<any> {

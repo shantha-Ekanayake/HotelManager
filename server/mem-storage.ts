@@ -861,7 +861,10 @@ class MemStorage implements IHMSStorage {
   async getGuestCommunications(guestId: string): Promise<GuestCommunication[]> {
     return Array.from(this.guestCommunications.values())
       .filter(c => c.guestId === guestId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
+        (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+      );
   }
 
   async createGuestCommunication(comm: InsertGuestCommunication): Promise<GuestCommunication> {
