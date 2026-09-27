@@ -21,7 +21,7 @@ import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, error, retryVerification } = useAuth();
 
   if (isLoading) {
     return (
@@ -30,6 +30,17 @@ function Router() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p>Loading...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (error && !/^401:/.test(error.message)) {
+    return (
+      <div role="alert" className="flex min-h-screen flex-col items-center justify-center gap-4">
+        <p>We couldn&apos;t verify your session. Please try again.</p>
+        <button type="button" onClick={() => void retryVerification()} className="rounded bg-primary px-4 py-2 text-primary-foreground">
+          Retry
+        </button>
       </div>
     );
   }

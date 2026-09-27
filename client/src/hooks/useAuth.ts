@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 
@@ -12,10 +12,27 @@ interface User {
   email?: string;
 }
 
-export function useAuth() {
-  const token = localStorage.getItem("hms_token");
+const tokenListeners = new Set<() => void>();
 
-  const { data: authData, isLoading, error, isSuccess } = useQuery<{ user: User }, Error, User>({
+function subscribeToToken(listener: () => void) {
+  tokenListeners.add(listener);
+  return () => { tokenListeners.delete(listener); };
+}
+
+function getToken() {
+  return localStorage.getItem("hms_token");
+}
+
+function clearToken(token: string) {
+  if (getToken() !== token) return;
+  localStorage.removeItem("hms_token");
+  tokenListeners.forEach((listener) => listener());
+}
+
+export function useAuth() {
+  const token = useSyncExternalStore(subscribeToToken, getToken);
+
+  const { data: authData, isLoading, error, isSuccess, refetch } = useQuery<{ user: User }, Error, User>({
     queryKey: ["/api", "auth", "me"],
     retry: false,
     enabled: !!token, // Only run query if token exists
@@ -25,19 +42,30 @@ export function useAuth() {
 
   // Detect bad server response shape: token present, query succeeded, but user is missing
   useEffect(() => {
-    if (token && isSuccess && !authData) {
+    if (token && isSuccess && !authData && getToken() === token) {
       console.error("useAuth: /api/auth/me returned an unexpected shape — 'user' field is missing");
       toast({
         title: "Session error",
         description: "Your session could not be verified. Please sign in again.",
         variant: "destructive",
       });
-      localStorage.removeItem("hms_token");
+      clearToken(token);
     }
   }, [token, isSuccess, authData]);
 
+  useEffect(() => {
+    if (token && error && isUnauthorizedError(error) && getToken() === token) {
+      clearToken(token);
+      toast({
+        title: "Session expired",
+        description: "Please sign in again.",
+        variant: "destructive",
+      });
+    }
+  }, [token, error]);
+
   const logout = () => {
-    localStorage.removeItem("hms_token");
+    if (token) clearToken(token);
     window.location.reload();
   };
 
@@ -46,10 +74,11 @@ export function useAuth() {
     isLoading: isLoading && !!token, // Only show loading if we have a token
     isAuthenticated: !!authData && !!token,
     error,
+    retryVerification: refetch,
     logout,
   };
 }
 
 export function isUnauthorizedError(error: Error): boolean {
-  return /^401: .*Unauthorized/.test(error.message);
+  return /^401:/.test(error.message);
 }
