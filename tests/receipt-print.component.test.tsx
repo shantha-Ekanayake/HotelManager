@@ -387,6 +387,9 @@ describe("CheckOutForm – Bill Summary balance label", () => {
     render(<CheckOutForm reservationId="res-1" />);
     expect(screen.getByText("Balance")).toBeInTheDocument();
     expect(screen.queryByText("Balance Due")).not.toBeInTheDocument();
+    const finalAmount = screen.getByTestId("text-final-amount");
+    expect(finalAmount).toHaveTextContent("Rs 0.00");
+    expect(finalAmount).toHaveClass("text-hotel-success");
   });
 
   it("shows 'Balance Due' when charges exceed payments", () => {
