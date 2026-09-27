@@ -501,6 +501,51 @@ describe("POST /api/reservations/:id/send-checkout-email", () => {
     expect(skippedEntry?.content).toMatch(/no email address/i);
   });
 
+  it("still reports a skipped resend when recording the skip throws", async () => {
+    mockSendCheckOutEmail.mockClear();
+    mockSendCheckOutEmail.mockResolvedValueOnce("skipped");
+    const auditError = new Error("Communication log unavailable");
+    const commsBefore = await memStorage.getGuestCommunications(testGuestId);
+    const communicationSpy = vi
+      .spyOn(memStorage, "createGuestCommunication")
+      .mockRejectedValueOnce(auditError);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const res = await request(app)
+        .post(`/api/reservations/${testReservationId}/send-checkout-email`)
+        .set("Authorization", authHeader)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        success: true,
+        message: "Receipt email was not sent",
+        emailStatus: "skipped",
+      });
+      expect(mockSendCheckOutEmail).toHaveBeenCalledTimes(1);
+      expect(communicationSpy).toHaveBeenCalledTimes(1);
+      expect(communicationSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          guestId: testGuestId,
+          subject: expect.stringContaining("[SKIPPED]"),
+        })
+      );
+      expect(await memStorage.getGuestCommunications(testGuestId)).toHaveLength(commsBefore.length);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to log skipped resend to guest_communications:",
+        auditError
+      );
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+        "Resend check-out email error:",
+        auditError
+      );
+    } finally {
+      communicationSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
   it("returns 502 and records a failure communication when sendCheckOutEmail returns 'failed'", async () => {
     mockSendCheckOutEmail.mockClear();
     mockSendCheckOutEmail.mockResolvedValueOnce("failed");

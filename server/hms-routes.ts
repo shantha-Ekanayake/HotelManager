@@ -1674,16 +1674,20 @@ export function registerReservationRoutes(app: Express) {
           return res.status(502).json({ error: "Email service failed to deliver the message", emailStatus: "failed" });
         }
         if (emailStatus === "skipped") {
-          await storage.createGuestCommunication({
-            guestId: reservation.guestId,
-            type: "email",
-            direction: "outbound",
-            subject: `Departure receipt resend – #${reservation.confirmationNumber} [SKIPPED]`,
-            content: guest.email
-              ? "Departure receipt resend was skipped by the email service."
-              : "Departure receipt resend was skipped because the guest has no email address.",
-            staffId: req.user?.id || null
-          });
+          try {
+            await storage.createGuestCommunication({
+              guestId: reservation.guestId,
+              type: "email",
+              direction: "outbound",
+              subject: `Departure receipt resend – #${reservation.confirmationNumber} [SKIPPED]`,
+              content: guest.email
+                ? "Departure receipt resend was skipped by the email service."
+                : "Departure receipt resend was skipped because the guest has no email address.",
+              staffId: req.user?.id || null
+            });
+          } catch (logErr) {
+            console.error("Failed to log skipped resend to guest_communications:", logErr);
+          }
           return res.json({
             success: true,
             message: guest.email
