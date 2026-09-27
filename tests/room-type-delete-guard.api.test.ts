@@ -162,3 +162,35 @@ describe("DELETE /api/room-types/:id — referencing-room guard", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("PATCH /api/rooms/:id/block — room activation", () => {
+  it("deactivates and reactivates an active room, persisting the final state", async () => {
+    const roomType = await makeRoomType("block-unblock");
+    const room = await makeRoom(roomType.id, true);
+    expect(room.isActive).toBe(true);
+
+    const blocked = await request(app)
+      .patch(`/api/rooms/${room.id}/block`)
+      .set("Authorization", authHeader)
+      .send({ isActive: false });
+
+    expect(blocked.status).toBe(200);
+    expect(blocked.body.room).toMatchObject({ id: room.id, isActive: false });
+
+    const unblocked = await request(app)
+      .patch(`/api/rooms/${room.id}/block`)
+      .set("Authorization", authHeader)
+      .send({ isActive: true });
+
+    expect(unblocked.status).toBe(200);
+    expect(unblocked.body.room).toMatchObject({ id: room.id, isActive: true });
+
+    const roomsResponse = await request(app)
+      .get("/api/properties/prop-demo/rooms")
+      .set("Authorization", authHeader);
+
+    expect(roomsResponse.status).toBe(200);
+    expect(roomsResponse.body.rooms.find((listedRoom: { id: string }) => listedRoom.id === room.id))
+      .toMatchObject({ id: room.id, isActive: true });
+  });
+});
