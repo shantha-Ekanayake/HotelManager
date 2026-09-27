@@ -196,9 +196,11 @@ export default function CheckOutForm({ reservationId, onCheckOutComplete }: Chec
     );
   }
 
-  const totalCharges = folio?.charges?.reduce((sum, c) => sum + parseFloat(c.amount), 0) || 0;
-  const totalPayments = folio?.payments?.reduce((sum, p) => sum + parseFloat(p.amount), 0) || 0;
-  const balance = totalCharges - totalPayments;
+  const chargeCents = folio.charges.reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+  const paymentCents = folio.payments.reduce((sum, p) => sum + Math.round(Number(p.amount) * 100), 0);
+  const totalCharges = chargeCents / 100;
+  const totalPayments = paymentCents / 100;
+  const balance = (chargeCents - paymentCents) / 100;
 
   // Post-check-out success panel
   if (checkOutResult) {

@@ -351,6 +351,36 @@ describe("CheckOutForm – Bill Summary balance label", () => {
     mockFolioQueryData = undefined;
   });
 
+  it("treats decimal charges and payments as settled in the form and printed receipt", () => {
+    mockFolioQueryData = {
+      ...DEFAULT_FOLIO_QUERY_DATA,
+      folio: {
+        ...DEFAULT_FOLIO_QUERY_DATA.folio,
+        charges: [
+          { id: "c1", description: "Room Charge", amount: "0.10" },
+          { id: "c2", description: "Mini Bar", amount: "0.20" },
+        ],
+        payments: [
+          { ...DEFAULT_FOLIO_QUERY_DATA.folio.payments[0], amount: "0.30" },
+        ],
+      },
+    };
+    resetWindowMock();
+    render(<CheckOutForm reservationId="res-1" />);
+
+    expect(screen.getByText("Balance")).toBeInTheDocument();
+    expect(screen.queryByText("Balance Due")).not.toBeInTheDocument();
+    expect(screen.getByTestId("text-final-amount")).toHaveTextContent("Rs 0.00");
+    expect(screen.getByTestId("text-final-amount")).toHaveClass("text-hotel-success");
+    expect(screen.getByText("Account Settled")).toBeInTheDocument();
+    expect(screen.getByText("Fully Paid")).toBeInTheDocument();
+    expect(screen.queryByText(/Outstanding Balance:/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("button-print-receipt"));
+    expect(capturedHtml).toContain("Rs 0.00");
+    expect(capturedHtml).toContain('class="balance-clear"');
+    expect(capturedHtml).not.toContain("Balance Due");
+  });
+
   it("shows 'Balance' instead of 'Balance Due' for a fully paid folio", () => {
     render(<CheckOutForm reservationId="res-1" />);
     expect(screen.getByText("Balance")).toBeInTheDocument();
