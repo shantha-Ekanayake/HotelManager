@@ -4,8 +4,8 @@
  *
  * Strategy
  * ─────────
- * CheckInForm.handlePrintCard delegates all property-field mapping to the
- * exported production function buildPropertyCardFields() (RegistrationCardPrint.ts).
+ * CheckInForm.handlePrintCard delegates property-list selection and mapping to
+ * the exported production function buildPropertyCardFieldsFromList() (RegistrationCardPrint.ts).
  * Tests import that REAL function and:
  *
  *   1. Verify it correctly maps a stubbed /api/properties response into
@@ -18,13 +18,13 @@
  * known property and confirm the printed card HTML contains that property's
  * name and address, not the placeholder") while avoiding the jsdom rendering
  * issues caused by CheckInForm's Radix UI portals and canvas elements.
- * CheckInForm calls buildPropertyCardFields() directly, so if that call is
- * removed or the function is changed, these tests break.
+ * CheckInForm uses the same list-to-fields function tested below.
  */
 
 import { describe, it, expect } from "vitest";
 import {
   buildPropertyCardFields,
+  buildPropertyCardFieldsFromList,
   buildRegistrationCardHtml,
 } from "../client/src/components/RegistrationCardPrint.js";
 
@@ -140,6 +140,20 @@ describe("buildPropertyCardFields – maps /api/properties response to card fiel
 //   /api/properties → propertiesData → buildPropertyCardFields() → printRegistrationCard()
 
 describe("Registration card HTML – real property name flows from /api/properties stub to printed output", () => {
+  it("prints the first property when /api/properties returns multiple entries", () => {
+    const propertiesData = {
+      properties: [
+        STUB_PROPERTY,
+        { ...STUB_PROPERTY, id: "prop-2", name: "Mountain View Hotel" },
+      ],
+    };
+    const fields = buildPropertyCardFieldsFromList(propertiesData.properties);
+    const html = buildRegistrationCardHtml({ ...BASE_CARD_DATA, ...fields });
+
+    expect(html).toContain("<h1>Seaside Grand Hotel</h1>");
+    expect(html).not.toContain("Mountain View Hotel");
+  });
+
   it("HTML header h1 contains the real property name, not the placeholder", () => {
     const fields = buildPropertyCardFields(STUB_PROPERTY);
     const html = buildRegistrationCardHtml({ ...BASE_CARD_DATA, ...fields });
@@ -163,9 +177,10 @@ describe("Registration card HTML – real property name flows from /api/properti
   });
 
   it("HTML falls back to the placeholder when /api/properties returns no entries", () => {
-    const fields = buildPropertyCardFields(undefined);
+    const propertiesData: { properties: typeof STUB_PROPERTY[] } = { properties: [] };
+    const fields = buildPropertyCardFieldsFromList(propertiesData.properties);
     const html = buildRegistrationCardHtml({ ...BASE_CARD_DATA, ...fields });
-    expect(html).toContain("Hotel Management System");
+    expect(html).toContain("<h1>Hotel Management System</h1>");
   });
 
   it("HTML-escapes special characters in the real property name", () => {

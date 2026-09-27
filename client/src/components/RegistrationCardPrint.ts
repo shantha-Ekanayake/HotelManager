@@ -40,6 +40,16 @@ export interface PropertyCardFields {
   propertyPhone: string | undefined;
 }
 
+interface CardProperty {
+  name?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  postalCode?: string | null;
+  phone?: string | null;
+}
+
 /** Shape of the guest fields forwarded to buildRegistrationCardHtml / printRegistrationCard. */
 export interface GuestCardFields {
   guestName: string;
@@ -103,27 +113,14 @@ export function buildGuestCardFields(
 }
 
 /**
- * Map the first entry of a /api/properties response into the three fields
- * needed by printRegistrationCard.
+ * Map a property into the three fields needed by printRegistrationCard.
  *
  * Exported so this logic can be unit-tested independently and stays in sync
- * with the HTML builder.  CheckInForm.handlePrintCard delegates to this
- * function so any regression (wrong field, missing fallback) is caught by
- * the test suite.
+ * with the HTML builder. The list helper below calls this function, and
+ * CheckInForm.handlePrintCard uses that helper.
  */
 export function buildPropertyCardFields(
-  property:
-    | {
-        name?: string | null;
-        address?: string | null;
-        city?: string | null;
-        state?: string | null;
-        country?: string | null;
-        postalCode?: string | null;
-        phone?: string | null;
-      }
-    | undefined
-    | null
+  property: CardProperty | undefined | null
 ): PropertyCardFields {
   const parts = property
     ? [
@@ -140,6 +137,13 @@ export function buildPropertyCardFields(
     propertyAddress: parts.length > 0 ? (parts as string[]).join(", ") : undefined,
     propertyPhone: property?.phone ?? undefined,
   };
+}
+
+/** Use the first property returned by /api/properties, as the check-in card does. */
+export function buildPropertyCardFieldsFromList(
+  properties: ReadonlyArray<CardProperty> | undefined
+): PropertyCardFields {
+  return buildPropertyCardFields(properties?.[0]);
 }
 
 /**

@@ -16,7 +16,7 @@ import type { Reservation, Guest, Room, Property } from "@shared/schema";
 import SignaturePad from "./SignaturePad";
 import {
   printRegistrationCard,
-  buildPropertyCardFields,
+  buildPropertyCardFieldsFromList,
   buildGuestCardFields,
   resolveRegistrationCardRoomNumber,
 } from "./RegistrationCardPrint";
@@ -149,8 +149,7 @@ export default function CheckInForm({ reservationId, onCheckInComplete }: CheckI
   const handlePrintCard = () => {
     const res = reservation?.reservation;
     const g = guestData?.guest;
-    const property = propertiesData?.properties?.[0];
-    const propertyFields = buildPropertyCardFields(property);
+    const propertyFields = buildPropertyCardFieldsFromList(propertiesData?.properties);
 
     const guestFields = buildGuestCardFields(g, idVerification);
     printRegistrationCard({
